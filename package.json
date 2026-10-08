@@ -1,0 +1,35 @@
+{
+  "name": "hermes-canvas",
+  "version": "0.1.0",
+  "description": "Every Hermes agent session on one infinite, zoomable canvas, with a live tiled view of everything running.",
+  "keywords": [
+    "hermes",
+    "ai",
+    "coding-agent",
+    "agents",
+    "canvas",
+    "dashboard",
+    "bun"
+  ],
+  "license": "MIT",
+  "author": "DevvGwardo",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "hermes-canvas": "./bin/hermes-canvas"
+  },
+  "scripts": {
+    "start": "bun bin/hermes-canvas",
+    "dev": "bun --hot bin/hermes-canvas --dev",
+    "demo": "bun bin/hermes-canvas --demo",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  }
+}

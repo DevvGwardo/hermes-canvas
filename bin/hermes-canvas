@@ -1,0 +1,71 @@
+#!/usr/bin/env bun
+import { parseArgs } from "node:util"
+import { startServer } from "../src/server/server"
+
+const { values } = parseArgs({
+  args: Bun.argv.slice(2),
+  options: {
+    port: { type: "string", short: "p" },
+    hostname: { type: "string" },
+    home: { type: "string" },
+    demo: { type: "boolean" },
+    dev: { type: "boolean" },
+    open: { type: "boolean" },
+    help: { type: "boolean", short: "h" },
+  },
+  strict: true,
+})
+
+if (values.help) {
+  console.log(`hermes-canvas: every Hermes agent session on one infinite canvas
+
+Usage: hermes-canvas [options]
+
+  -p, --port <n>        Port to listen on (default 4318, 0 = random)
+      --hostname <h>    Interface to bind (default 127.0.0.1)
+      --home <dir>      Hermes home containing state.db (default: per-platform,
+                        or HERMES_HOME)
+      --demo            Run with simulated sessions, no Hermes store needed
+      --open            Open the canvas in your browser
+      --dev             Hot reload the UI while editing
+  -h, --help            Show this help`)
+  process.exit(0)
+}
+
+if (values.home) process.env.HERMES_HOME = values.home
+
+const hostname = values.hostname ?? "127.0.0.1"
+if (hostname !== "127.0.0.1" && hostname !== "localhost" && hostname !== "::1") {
+  console.warn(
+    `\x1b[33mwarning:\x1b[0m binding to ${hostname} exposes your Hermes sessions (steer agents, run commands) to the network with no extra auth.`,
+  )
+}
+
+try {
+  const { server } = await startServer({
+    port: values.port !== undefined ? Number(values.port) : Number(process.env.PORT ?? 4318),
+    hostname,
+    demo: !!values.demo,
+    dev: !!values.dev,
+  })
+  // Always show a loopback URL: it works for local clicks, avoids leaking a
+  // LAN IP into terminal recordings, and never suggests 0.0.0.0 as clickable.
+  const url = `http://localhost:${server.port}`
+  console.log(`\x1b[1mhermes-canvas\x1b[0m  ${url}`)
+  if (hostname !== "127.0.0.1" && hostname !== "localhost" && hostname !== "::1") {
+    console.log(`  bound to ${hostname} (LAN). Restart without --hostname to bind loopback only.`)
+  }
+  if (values.demo) console.log("  mode      simulated sessions (demo)")
+  if (values.open) {
+    const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open"
+    const args = process.platform === "win32" ? ["/c", "start", url] : [url]
+    Bun.spawn([opener, ...args], { stdio: ["ignore", "ignore", "ignore"] })
+  }
+} catch (e) {
+  const msg = (e as Error).message
+  console.error(`hermes-canvas: ${msg}`)
+  if (/in use|EADDRINUSE/i.test(msg)) {
+    console.error(`  Another copy is probably running: open it, stop it, or pass --port <n>.`)
+  }
+  process.exit(1)
+}
