@@ -9,6 +9,8 @@ import { SessionPanel } from "./panel"
 import { NewSessionPicker } from "./picker"
 import { TilesView } from "./tiles"
 import { autoApproveToggle, autoApprovedNotices } from "./approve"
+import pipMark from "../../assets/pip.svg"
+import { WALLPAPER_IDS, WALLPAPER_LABELS, applyWallpaper, loadWallpaper, saveWallpaper, type WallpaperId } from "./wallpaper"
 import { SPINNERS, setSpinnerStyle, spinner, type SpinnerStyle } from "./spinners"
 import { ALLOW_ALL, STATUS_LABEL, Store, type Status } from "./store"
 import { toast } from "./toast"
@@ -88,8 +90,17 @@ function segmented<T extends string>(items: readonly T[], labels: Record<T, stri
 function showUnavailable(root: HTMLElement, cfg: CanvasConfig) {
   root.replaceChildren()
   const box = el("div", "empty-state")
+  const mark = el("div", "empty-mark")
+  const pip = document.createElement("img")
+  pip.src = pipMark
+  pip.alt = "Pip, the courier owl"
+  pip.className = "empty-pip"
+  pip.width = 112
+  pip.height = 112
+  pip.draggable = false
+  mark.append(pip)
   box.append(
-    el("div", "empty-mark", "◐"),
+    mark,
     el("h1", "", "Can't reach Hermes"),
     el(
       "p",
@@ -197,9 +208,14 @@ async function boot() {
 
   const top = el("div", "topbar")
   const brand = el("div", "brand")
+  const markImg = document.createElement("img")
+  markImg.src = pipMark
+  markImg.alt = "Pip, the courier owl"
+  markImg.className = "brand-mark"
+  markImg.draggable = false
   const dot = el("span", "conn-dot")
   const stats = el("span", "stats")
-  brand.append(dot, el("span", "brand-name", "hermes"))
+  brand.append(markImg, dot, el("span", "brand-name", "Hermes"))
 
   // Status counts double as filters: click one to see just those sessions.
   const chips = el("div", "chips")
@@ -280,16 +296,27 @@ async function boot() {
   const dock = el("div", "dock")
   const layoutSeg = segmented(LAYOUTS, LAYOUT_LABEL, layoutName, (v) => setLayout(v), "Layout")
   const spinSeg = segmented(SPINNERS, SPINNER_LABEL, spinnerStyle, (v) => setSpinner(v), "Spinner")
+  let wallpaper = loadWallpaper()
+  applyWallpaper(canvas.stage, wallpaper)
+  const wallSeg = segmented(WALLPAPER_IDS, WALLPAPER_LABELS, wallpaper, (v) => setWallpaper(v), "Wallpaper")
   // The spinner only shows on working cards, often tiny or off screen, so each
   // button previews its own animation.
   layoutSeg.group.title = "How sessions are arranged on the canvas (1–4)"
   spinSeg.group.title = "Animation shown on working sessions"
+  wallSeg.group.title = "Canvas background wallpaper"
   spinSeg.group.querySelectorAll<HTMLButtonElement>(".seg-btn").forEach((b, i) => {
     b.prepend(spinner(12, "seg-spin", SPINNERS[i]))
     b.classList.add("with-spin")
   })
-  dock.append(layoutSeg.group, el("span", "dock-sep"), spinSeg.group)
+  dock.append(layoutSeg.group, el("span", "dock-sep"), spinSeg.group, el("span", "dock-sep"), wallSeg.group)
   root.append(top, dock)
+
+  function setWallpaper(v: WallpaperId) {
+    wallpaper = v
+    wallSeg.set(v)
+    saveWallpaper(v)
+    applyWallpaper(canvas.stage, v)
+  }
 
   function setLayout(v: LayoutName) {
     layoutName = v

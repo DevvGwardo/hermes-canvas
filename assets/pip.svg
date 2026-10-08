@@ -1,0 +1,190 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="76 24 360 448" role="img" width="100%" height="100%" aria-hidden="true">
+  <title id="pip-icon-owl-title">Pip, the courier owl</title>
+  <desc id="pip-icon-owl-description">A plush, bright-eyed owl in a winged gold petasos, carrying a leather mail satchel.</desc>
+  <defs>
+    <radialGradient id="pip-icon-owl-plush" cx=".35" cy=".23" r=".85">
+      <stop offset="0" stop-color="#eadcc5"/>
+      <stop offset=".48" stop-color="#b99476"/>
+      <stop offset="1" stop-color="#715b54"/>
+    </radialGradient>
+    <linearGradient id="pip-icon-owl-feather" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#b99476"/>
+      <stop offset="1" stop-color="#715b54"/>
+    </linearGradient>
+    <radialGradient id="pip-icon-owl-face" cx=".45" cy=".3" r=".8">
+      <stop stop-color="#fff6e7"/>
+      <stop offset="1" stop-color="#eadcc5"/>
+    </radialGradient>
+    <linearGradient id="pip-icon-owl-gold" x1="0" y1="0" x2=".2" y2="1">
+      <stop stop-color="#fffefa"/>
+      <stop offset=".38" stop-color="#e8b96e"/>
+      <stop offset="1" stop-color="#b99476"/>
+    </linearGradient>
+    <linearGradient id="pip-icon-owl-leather" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#715b54"/>
+      <stop offset="1" stop-color="#302c35"/>
+    </linearGradient>
+    <clipPath id="pip-icon-owl-eye-clip-l"><circle cx="188" cy="232" r="57"/></clipPath>
+    <clipPath id="pip-icon-owl-eye-clip-r"><circle cx="324" cy="232" r="57"/></clipPath>
+  </defs>
+  <g id="pip-icon-part-root" data-mascot-part="root" data-pivot="256 444" transform="translate(0 0) translate(256 444) rotate(0) scale(1 1) translate(-256 -444) ">
+    <g id="pip-icon-part-body" data-mascot-part="body" data-pivot="256 418" data-parent="part-root" transform="translate(0 0) translate(256 418) rotate(0) scale(1 1) translate(-256 -418) ">
+      <g id="pip-icon-part-foot-l" data-mascot-part="foot-l" data-pivot="207 426" data-parent="part-body" transform="translate(0 0) translate(207 426) rotate(0) scale(1 1) translate(-207 -426) ">
+        <path d="M191 421Q186 437 176 444Q172 455 181 456L226 456Q237 455 230 445L218 422Z" fill="url(#pip-icon-owl-gold)" stroke="#302c35" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M193 443L190 453M207 442L207 454M220 445L223 454" fill="none" stroke="#715b54" stroke-width="3" stroke-linecap="round"/>
+      </g>
+      <g id="pip-icon-part-foot-r" data-mascot-part="foot-r" data-pivot="305 426" data-parent="part-body" transform="translate(0 0) translate(305 426) rotate(0) scale(1 1) translate(-305 -426) ">
+        <path d="M294 422L282 445Q275 455 286 456L331 456Q340 455 336 444Q326 437 321 421Z" fill="url(#pip-icon-owl-gold)" stroke="#302c35" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M291 445L288 454M305 442L305 454M319 443L322 453" fill="none" stroke="#715b54" stroke-width="3" stroke-linecap="round"/>
+      </g>
+      <path d="M152 266Q115 306 126 371Q134 432 198 444Q256 458 314 444Q378 432 386 371Q397 306 360 266Z" fill="url(#pip-icon-owl-plush)" stroke="#302c35" stroke-width="6"/>
+      <path d="M180 309Q163 340 168 380Q174 420 218 433Q256 444 294 430Q331 417 337 380Q344 338 324 309Q256 281 180 309Z" fill="url(#pip-icon-owl-face)"/>
+      <path d="M141 338Q136 365 147 387M368 336Q379 365 365 391" fill="none" stroke="#eadcc5" stroke-width="4" stroke-linecap="round" opacity=".42"/>
+      <path d="M143 402Q148 413 158 413M153 416Q163 427 177 426M359 402Q354 413 344 413M349 416Q339 427 325 426" fill="none" stroke="#715b54" stroke-width="3" stroke-linecap="round" opacity=".55"/>
+      <g fill="none" stroke="#b99476" stroke-width="3.5" stroke-linecap="round" opacity=".7">
+        <path d="M197 338Q204 348 212 338M232 345Q240 356 249 345M268 343Q277 354 285 342M302 337Q310 347 318 336"/>
+        <path d="M186 366Q194 377 202 366M220 371Q228 382 236 371M255 371Q263 382 271 371M290 365Q298 376 306 365"/>
+        <path d="M198 398Q206 407 214 398M233 404Q241 414 249 404M267 402Q275 412 283 402"/>
+      </g>
+      <g id="pip-icon-part-head" data-mascot-part="head" data-pivot="256 294" data-parent="part-body" transform="translate(0 0) translate(256 294) rotate(-2) scale(1 1) translate(-256 -294) ">
+        <g id="pip-icon-part-ear-l" data-mascot-part="ear-l" data-pivot="156 168" data-parent="part-head" transform="translate(0 0) translate(156 168) rotate(-3) scale(1 1) translate(-156 -168) ">
+          <path d="M125 179Q116 151 130 111L143 124L153 106Q170 134 183 164Z" fill="url(#pip-icon-owl-feather)" stroke="#302c35" stroke-width="5" stroke-linejoin="round"/>
+          <path d="M135 136L141 157M153 132L157 153" stroke="#eadcc5" stroke-width="4" stroke-linecap="round" opacity=".6"/>
+        </g>
+        <g id="pip-icon-part-ear-r" data-mascot-part="ear-r" data-pivot="356 168" data-parent="part-head" transform="translate(0 0) translate(356 168) rotate(3) scale(1 1) translate(-356 -168) ">
+          <path d="M329 164Q342 134 359 106L369 124L382 111Q396 151 387 179Z" fill="url(#pip-icon-owl-feather)" stroke="#302c35" stroke-width="5" stroke-linejoin="round"/>
+          <path d="M359 132L355 153M377 136L371 157" stroke="#eadcc5" stroke-width="4" stroke-linecap="round" opacity=".6"/>
+        </g>
+        <path d="M256 129Q167 117 123 168Q91 205 108 260Q122 309 181 327Q256 353 331 327Q390 309 404 260Q421 205 389 168Q345 117 256 129Z" fill="url(#pip-icon-owl-plush)" stroke="#302c35" stroke-width="6"/>
+        <path d="M110 235Q105 270 127 289M402 235Q407 270 385 289" fill="none" stroke="#eadcc5" stroke-width="4" stroke-linecap="round" opacity=".35"/>
+        <g id="pip-icon-part-ruff-l" data-mascot-part="ruff-l" data-pivot="119 253" data-parent="part-head" transform="translate(0 0) translate(119 253) rotate(0) scale(0 0) translate(-119 -253) ">
+          <path d="M120 221L90 225L103 243L79 252L104 266L87 285L127 283Z" fill="url(#pip-icon-owl-feather)" stroke="#302c35" stroke-width="4" stroke-linejoin="round"/>
+        </g>
+        <g id="pip-icon-part-ruff-r" data-mascot-part="ruff-r" data-pivot="393 253" data-parent="part-head" transform="translate(0 0) translate(393 253) rotate(0) scale(0 0) translate(-393 -253) ">
+          <path d="M392 221L422 225L409 243L433 252L408 266L425 285L385 283Z" fill="url(#pip-icon-owl-feather)" stroke="#302c35" stroke-width="4" stroke-linejoin="round"/>
+        </g>
+        <path d="M256 191Q215 156 172 163Q119 172 119 226Q118 279 169 302Q214 323 256 306Q298 323 343 302Q394 279 393 226Q393 172 340 163Q297 156 256 191Z" fill="url(#pip-icon-owl-face)" stroke="#715b54" stroke-width="3"/>
+        <g fill="none" stroke="#b99476" stroke-width="2.4" stroke-linecap="round" opacity=".65">
+          <path d="M134 196L143 199M128 210L138 212M128 226L137 226M132 246L141 243M142 267L150 261M157 282L164 275"/>
+          <path d="M378 196L369 199M384 210L374 212M384 226L375 226M380 246L371 243M370 267L362 261M355 282L348 275"/>
+          <path d="M175 308L179 316M195 314L198 322M215 316L218 325M237 318L239 327M275 318L273 327M297 316L294 325M317 314L314 322M337 308L333 316"/>
+        </g>
+        <path d="M243 178L256 190L269 178" fill="none" stroke="#b99476" stroke-width="4" stroke-linecap="round"/>
+        <g id="pip-icon-part-eye-l" data-mascot-part="eye-l" data-pivot="188 232" data-parent="part-head" transform="translate(0 0) translate(188 232) rotate(0) scale(1 1) translate(-188 -232) ">
+          <circle cx="188" cy="233" r="61" fill="#715b54"/>
+          <circle cx="188" cy="232" r="57" fill="#fff6e7" stroke="#302c35" stroke-width="4"/>
+          <g clip-path="url(#pip-icon-owl-eye-clip-l)">
+            <g id="pip-icon-part-pupil-l" data-mascot-part="pupil-l" data-pivot="188 232" data-parent="part-eye-l" transform="translate(0 0) translate(188 232) rotate(0) scale(1 1) translate(-188 -232) ">
+              <g id="pip-icon-pupil-l" data-mascot-pupil="l" data-pivot="188 232">
+              <circle cx="193" cy="236" r="37" fill="#e8b96e"/>
+              <circle cx="193" cy="236" r="32" fill="#302c35"/>
+              <path d="M174 251Q184 263 203 256" fill="none" stroke="#715b54" stroke-width="6" stroke-linecap="round"/>
+              <ellipse cx="181" cy="219" rx="12" ry="14" fill="#fffefa"/>
+              <circle cx="207" cy="245" r="5.5" fill="#fffefa"/>
+              </g>
+            </g>
+          </g>
+        </g>
+        <g id="pip-icon-part-eye-r" data-mascot-part="eye-r" data-pivot="324 232" data-parent="part-head" transform="translate(0 0) translate(324 232) rotate(0) scale(1 1) translate(-324 -232) ">
+          <circle cx="324" cy="233" r="61" fill="#715b54"/>
+          <circle cx="324" cy="232" r="57" fill="#fff6e7" stroke="#302c35" stroke-width="4"/>
+          <g clip-path="url(#pip-icon-owl-eye-clip-r)">
+            <g id="pip-icon-part-pupil-r" data-mascot-part="pupil-r" data-pivot="324 232" data-parent="part-eye-r" transform="translate(0 0) translate(324 232) rotate(0) scale(1 1) translate(-324 -232) ">
+              <g id="pip-icon-pupil-r" data-mascot-pupil="r" data-pivot="324 232">
+              <circle cx="319" cy="236" r="37" fill="#e8b96e"/>
+              <circle cx="319" cy="236" r="32" fill="#302c35"/>
+              <path d="M300 251Q310 263 329 256" fill="none" stroke="#715b54" stroke-width="6" stroke-linecap="round"/>
+              <ellipse cx="307" cy="219" rx="12" ry="14" fill="#fffefa"/>
+              <circle cx="333" cy="245" r="5.5" fill="#fffefa"/>
+              </g>
+            </g>
+          </g>
+        </g>
+        <g id="pip-icon-part-lid-l" data-mascot-part="lid-l" data-pivot="188 232" data-parent="part-head" transform="translate(0 0) translate(188 232) rotate(0) scale(1 0) translate(-188 -232) ">
+          <circle cx="188" cy="232" r="58" fill="url(#pip-icon-owl-face)" stroke="#715b54" stroke-width="4"/>
+          <path d="M154 240Q188 259 222 240" fill="none" stroke="#302c35" stroke-width="6" stroke-linecap="round"/>
+          <path d="M150 235L154 240M222 240L226 235" stroke="#302c35" stroke-width="4" stroke-linecap="round"/>
+        </g>
+        <g id="pip-icon-part-lid-r" data-mascot-part="lid-r" data-pivot="324 232" data-parent="part-head" transform="translate(0 0) translate(324 232) rotate(0) scale(1 0) translate(-324 -232) ">
+          <circle cx="324" cy="232" r="58" fill="url(#pip-icon-owl-face)" stroke="#715b54" stroke-width="4"/>
+          <path d="M290 240Q324 259 358 240" fill="none" stroke="#302c35" stroke-width="6" stroke-linecap="round"/>
+          <path d="M286 235L290 240M358 240L362 235" stroke="#302c35" stroke-width="4" stroke-linecap="round"/>
+        </g>
+        <g id="pip-icon-part-brow-l" data-mascot-part="brow-l" data-pivot="188 171" data-parent="part-head" transform="translate(0 0) translate(188 171) rotate(0) scale(1 1) translate(-188 -171) ">
+          <path d="M149 180Q181 160 217 178" fill="none" stroke="#715b54" stroke-width="7" stroke-linecap="round"/>
+          <path d="M153 177Q180 163 207 173" fill="none" stroke="#eadcc5" stroke-width="2" stroke-linecap="round"/>
+        </g>
+        <g id="pip-icon-part-brow-r" data-mascot-part="brow-r" data-pivot="324 171" data-parent="part-head" transform="translate(0 0) translate(324 171) rotate(0) scale(1 1) translate(-324 -171) ">
+          <path d="M295 178Q331 160 363 180" fill="none" stroke="#715b54" stroke-width="7" stroke-linecap="round"/>
+          <path d="M305 173Q332 163 359 177" fill="none" stroke="#eadcc5" stroke-width="2" stroke-linecap="round"/>
+        </g>
+        <path d="M240 278Q256 260 272 278L256 291Z" fill="url(#pip-icon-owl-gold)" stroke="#302c35" stroke-width="3.5" stroke-linejoin="round"/>
+        <path d="M251 274L257 271" stroke="#fffefa" stroke-width="3" stroke-linecap="round"/>
+        <g id="pip-icon-part-mouth" data-mascot-part="mouth" data-pivot="256 288" data-parent="part-head" transform="translate(0 0) translate(256 288) rotate(0) scale(1 1) translate(-256 -288) ">
+          <g id="pip-icon-mouth-neutral" data-mascot-mouth="neutral" style=";display:inline"><path d="M246 285L256 298L266 285" fill="#e8b96e" stroke="#302c35" stroke-width="3" stroke-linejoin="round"/></g>
+          <g id="pip-icon-mouth-smile" data-mascot-mouth="smile" display="none" style=";display:none"><path d="M241 285Q256 305 271 285Q256 291 241 285Z" fill="#302c35"/><path d="M250 296L256 300L262 296" fill="#e8b96e"/></g>
+          <g id="pip-icon-mouth-open" data-mascot-mouth="open" display="none" style=";display:none"><path d="M244 285Q256 280 268 285Q270 308 256 310Q242 308 244 285Z" fill="#302c35"/><path d="M249 304Q256 297 263 304" fill="#e8b96e"/></g>
+          <g id="pip-icon-mouth-o" data-mascot-mouth="o" display="none" style=";display:none"><ellipse cx="256" cy="296" rx="8" ry="11" fill="#302c35" stroke="#e8b96e" stroke-width="3"/></g>
+          <g id="pip-icon-mouth-flat" data-mascot-mouth="flat" display="none" style=";display:none"><path d="M240 291L272 291" stroke="#302c35" stroke-width="5" stroke-linecap="round"/></g>
+          <g id="pip-icon-mouth-grin" data-mascot-mouth="grin" display="none" style=";display:none"><path d="M238 284Q256 313 274 284Z" fill="#302c35"/><path d="M245 287Q256 298 267 287" fill="#fff6e7"/><path d="M251 303Q256 298 261 303" fill="#e8b96e"/></g>
+        </g>
+        <g id="pip-icon-part-helmet" data-mascot-part="helmet" data-pivot="256 141" data-parent="part-head" transform="translate(0 0) translate(256 141) rotate(0) scale(1 1) translate(-256 -141) ">
+          <g id="pip-icon-part-helmet-wing-l" data-mascot-part="helmet-wing-l" data-pivot="180 112" data-parent="part-helmet" transform="translate(0 0) translate(180 112) rotate(0) scale(1 1) translate(-180 -112) ">
+            <path d="M179 127Q140 118 112 73Q103 57 110 47Q124 60 140 65Q132 51 143 43Q155 65 172 75Q168 59 180 57Q185 88 197 111Z" fill="url(#pip-icon-owl-face)" stroke="#302c35" stroke-width="4" stroke-linejoin="round"/>
+            <path d="M124 74Q141 97 172 109M145 68Q158 90 179 100M176 78L187 102" fill="none" stroke="#b99476" stroke-width="3" stroke-linecap="round"/>
+            <path d="M114 57L121 65" stroke="#fffefa" stroke-width="4" stroke-linecap="round"/>
+          </g>
+          <g id="pip-icon-part-helmet-wing-r" data-mascot-part="helmet-wing-r" data-pivot="332 112" data-parent="part-helmet" transform="translate(0 0) translate(332 112) rotate(0) scale(1 1) translate(-332 -112) ">
+            <path d="M315 111Q327 88 332 57Q344 59 340 75Q357 65 369 43Q380 51 372 65Q388 60 402 47Q409 57 400 73Q372 118 333 127Z" fill="url(#pip-icon-owl-face)" stroke="#302c35" stroke-width="4" stroke-linejoin="round"/>
+            <path d="M388 74Q371 97 340 109M367 68Q354 90 333 100M336 78L325 102" fill="none" stroke="#b99476" stroke-width="3" stroke-linecap="round"/>
+            <path d="M398 57L391 65" stroke="#fffefa" stroke-width="4" stroke-linecap="round"/>
+          </g>
+          <path d="M171 138Q174 85 213 81Q255 65 299 81Q339 87 341 138Z" fill="url(#pip-icon-owl-gold)" stroke="#302c35" stroke-width="5"/>
+          <path d="M203 94Q235 79 271 88" fill="none" stroke="#fffefa" stroke-width="5" stroke-linecap="round" opacity=".65"/>
+          <path d="M304 97Q317 108 317 128" fill="none" stroke="#715b54" stroke-width="4" stroke-linecap="round" opacity=".45"/>
+          <path d="M137 133Q256 117 375 133Q392 135 389 146Q386 160 355 164Q256 172 157 164Q126 160 123 146Q120 135 137 133Z" fill="url(#pip-icon-owl-gold)" stroke="#302c35" stroke-width="5"/>
+          <path d="M145 140Q250 127 365 140" fill="none" stroke="#fffefa" stroke-width="4" stroke-linecap="round" opacity=".65"/>
+          <path d="M250 130L264 130L271 151L257 163L243 151Z" fill="#715b54" stroke="#302c35" stroke-width="2.5"/>
+          <path d="M251 141L263 141L260 146L252 150L263 150" fill="none" stroke="#e8b96e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </g>
+      <path d="M181 308Q222 337 286 373" fill="none" stroke="#302c35" stroke-width="17" stroke-linecap="round"/>
+      <path d="M181 308Q222 337 286 373" fill="none" stroke="#715b54" stroke-width="11" stroke-linecap="round"/>
+      <path d="M186 308Q227 337 288 370" fill="none" stroke="#e8b96e" stroke-width="1.6" stroke-dasharray="3 5" opacity=".65"/>
+      <g id="pip-icon-part-satchel" data-mascot-part="satchel" data-pivot="310 371" data-parent="part-body" transform="translate(0 0) translate(310 371) rotate(0) scale(1 1) translate(-310 -371) ">
+        <path d="M271 350Q310 340 349 350L356 407Q353 425 310 428Q267 425 264 407Z" fill="url(#pip-icon-owl-leather)" stroke="#302c35" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M277 395L275 411Q310 423 344 411L342 395" fill="none" stroke="#b99476" stroke-width="2" stroke-dasharray="3 4"/>
+        <path d="M281 347L282 335L333 333L340 350" fill="#fff6e7" stroke="#302c35" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M288 337L309 348L327 335" fill="none" stroke="#b99476" stroke-width="2"/>
+        <g id="pip-icon-part-satchel-flap" data-mascot-part="satchel-flap" data-pivot="310 349" data-parent="part-satchel" transform="translate(0 0) translate(310 349) rotate(0) scale(1 1) translate(-310 -349) ">
+          <path d="M268 350Q310 336 352 350L350 377Q310 401 270 377Z" fill="url(#pip-icon-owl-feather)" stroke="#302c35" stroke-width="4" stroke-linejoin="round"/>
+          <path d="M278 356Q310 346 342 356L340 372Q310 389 280 372Z" fill="none" stroke="#eadcc5" stroke-width="1.8" stroke-dasharray="3 4" opacity=".6"/>
+          <rect x="301" y="367" width="18" height="25" rx="5" fill="#e8b96e" stroke="#302c35" stroke-width="3"/>
+          <path d="M310 373L310 384" stroke="#302c35" stroke-width="3" stroke-linecap="round"/>
+        </g>
+        <path d="M290 405L303 405L299 410L290 414L304 414" fill="none" stroke="#e8b96e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="pip-icon-part-wing-l" data-mascot-part="wing-l" data-pivot="145 316" data-parent="part-body" transform="translate(0 0) translate(145 316) rotate(0) scale(1 1) translate(-145 -316) ">
+        <path d="M151 301Q123 291 109 323Q96 352 112 391Q123 416 141 403Q148 414 158 400Q176 372 170 339Q166 313 151 301Z" fill="url(#pip-icon-owl-feather)" stroke="#302c35" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M117 320Q123 330 130 322Q135 334 143 326Q151 337 159 330" fill="none" stroke="#715b54" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+        <path d="M118 317Q124 325 130 319M138 323Q145 330 151 325" fill="none" stroke="#b99476" stroke-width="3" stroke-linecap="round"/>
+        <path d="M121 324Q108 352 124 383M137 329Q125 357 139 390M152 337Q144 362 151 382" fill="none" stroke="#eadcc5" stroke-width="3.5" stroke-linecap="round" opacity=".6"/>
+        <path d="M118 313Q130 304 140 309" fill="none" stroke="#fffefa" stroke-width="3" stroke-linecap="round" opacity=".4"/>
+        <g id="pip-icon-part-letter" data-mascot-part="letter" data-pivot="133 377" data-parent="part-wing-l" transform="translate(0 0) translate(133 377) rotate(0) scale(0 0) translate(-133 -377) ">
+          <rect x="77" y="340" width="112" height="74" rx="9" fill="url(#pip-icon-owl-face)" stroke="#302c35" stroke-width="4"/>
+          <path d="M80 405L125 371M186 405L141 371" fill="none" stroke="#b99476" stroke-width="2.5"/>
+          <path d="M81 346L133 382L185 346" fill="none" stroke="#b99476" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="133" cy="380" r="13" fill="#e8b96e" stroke="#715b54" stroke-width="2.5"/>
+          <path d="M127 375L139 375L136 380L128 384L139 384" fill="none" stroke="#302c35" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </g>
+      <g id="pip-icon-part-wing-r" data-mascot-part="wing-r" data-pivot="367 316" data-parent="part-body" transform="translate(0 0) translate(367 316) rotate(0) scale(1 1) translate(-367 -316) ">
+        <path d="M361 301Q389 291 403 323Q416 352 400 391Q389 416 371 403Q364 414 354 400Q336 372 342 339Q346 313 361 301Z" fill="url(#pip-icon-owl-feather)" stroke="#302c35" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M395 320Q389 330 382 322Q377 334 369 326Q361 337 353 330" fill="none" stroke="#715b54" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+        <path d="M394 317Q388 325 382 319M374 323Q367 330 361 325" fill="none" stroke="#b99476" stroke-width="3" stroke-linecap="round"/>
+        <path d="M391 324Q404 352 388 383M375 329Q387 357 373 390M360 337Q368 362 361 382" fill="none" stroke="#eadcc5" stroke-width="3.5" stroke-linecap="round" opacity=".6"/>
+        <path d="M394 313Q382 304 372 309" fill="none" stroke="#fffefa" stroke-width="3" stroke-linecap="round" opacity=".4"/>
+      </g>
+    </g>
+  </g>
+</svg>

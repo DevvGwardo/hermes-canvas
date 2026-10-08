@@ -1,28 +1,72 @@
 :root {
-  --bg: #0a0a0a;
-  --card: #161616;
-  --card-hover: #1b1b1b;
-  --card-border: rgba(255, 255, 255, 0.045);
-  --panel: #151515;
-  --line: #242424;
-  --text: #ededed;
-  --text-2: #b9b9b9;
-  --text-3: #8a8a8a;
-  --text-4: #626262;
-  --accent: #46d37e;
-  --st-working: #46d37e;
-  --st-ask: #e5b04a;
-  --st-review: #6aa6ff;
-  --st-failed: #e5675a;
-  --st-stopped: #8a8a8a;
-  --accent-dim: rgba(70, 211, 126, 0.16);
-  --warn: #e5b04a;
-  --danger: #e5675a;
-  --link: #6aa6ff;
-  --radius: 3px;
-  --font: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  /* Hermes Desk tokens (ported from hermes-desk desk-tokens.css). Every text
+     colour is opaque; cards keep opaque fills so text never sits on wallpaper
+     glow areas (see the WCAG note in desk-tokens.css). */
+  --desk-surface-0: #0e0e10;
+  --desk-surface-1: #161618;
+  --desk-surface-2: #1c1c1f;
+  --desk-surface-3: #2a2a2e;
+  --desk-surface-4: #3a3a3f;
+  --desk-text-primary: #f2f2f5;
+  --desk-text-secondary: #c4c4ce;
+  --desk-text-tertiary: #adadb9;
+  --desk-hairline: #ffffff14;
+  --desk-hairline-strong: #ffffff26;
+  --desk-control-border: #888894;
+  --desk-accent: #a7ceff;
+  --desk-accent-surface: #253347;
+  --desk-accent-ink: #102239;
+  --desk-success: #a3d9b5;
+  --desk-success-surface: #24352b;
+  --desk-warn: #efc58c;
+  --desk-warn-surface: #3b3022;
+  --desk-danger: #f2a8ad;
+  --desk-danger-surface: #3c272b;
+  --desk-focus-ring: #b8d8ff;
+  --desk-radius-xs: 4px;
+  --desk-radius-sm: 8px;
+  --desk-radius-md: 12px;
+  --desk-radius-lg: 16px;
+  --desk-radius-pill: 999px;
+  --desk-shadow-raised: 0 2px 8px #00000026, 0 0 0 1px #ffffff0a;
+  --desk-shadow-popover: 0 8px 24px #00000066, 0 0 0 1px #ffffff1a;
+  --desk-shadow-modal: 0 24px 64px #00000080, 0 0 0 1px #ffffff26;
+  /* Pip, the courier owl: winged gold petasos. Secondary brand accent. */
+  --pip-gold: #e8b96e;
+  /* Wallpaper glow tints (hermes-desk --ca-* palette). */
+  --ca-brand-tint: #b7d9fe;
+  --ca-pink-soft: #ffe4ef;
+
+  /* Canvas theme, re-pointed at the desk tokens. */
+  --bg: var(--desk-surface-0);
+  --card: var(--desk-surface-1);
+  --card-hover: var(--desk-surface-2);
+  --card-border: var(--desk-hairline);
+  --panel: var(--desk-surface-1);
+  --line: var(--desk-hairline-strong);
+  --text: var(--desk-text-primary);
+  --text-2: var(--desk-text-secondary);
+  --text-3: var(--desk-text-tertiary);
+  --text-4: var(--desk-text-tertiary);
+  --accent: var(--desk-accent);
+  --st-working: var(--desk-success);
+  --st-ask: var(--desk-warn);
+  --st-review: var(--desk-accent);
+  --st-failed: var(--desk-danger);
+  --st-stopped: var(--desk-text-tertiary);
+  --accent-dim: var(--desk-accent-surface);
+  --warn: var(--desk-warn);
+  --danger: var(--desk-danger);
+  --link: var(--desk-accent);
+  --radius: var(--desk-radius-md);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+  --mono: "SFMono-Regular", ui-monospace, Menlo, monospace;
   color-scheme: dark;
+}
+
+:where(.btn, .chip, .seg-btn, .icon-btn, .new-btn, .tiles-open-btn, .tiles-btn, .head-btn, .aa-toggle, a, input, select, textarea, [contenteditable]):focus-visible {
+  outline: 2px solid var(--desk-focus-ring);
+  outline-offset: 2px;
 }
 
 * {
@@ -37,7 +81,7 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: var(--bg);
+  background: #000;
   color: var(--text);
   font: 14px/1.45 var(--font);
   -webkit-font-smoothing: antialiased;
@@ -52,6 +96,11 @@ button {
   border: 0;
   padding: 0;
   cursor: pointer;
+}
+
+::selection {
+  background: var(--desk-accent-surface);
+  color: var(--desk-text-primary);
 }
 
 #app {
@@ -85,6 +134,54 @@ button {
   cursor: grabbing !important;
 }
 
+/* ---- hermes-desk dark wallpapers -------------------------------------------
+   Painted on .stage, BEHIND the GPU-composited .world layer, so pan/zoom
+   never repaints them. Near-black base + very low-opacity brand-tint (top
+   left) and pink-soft (top right) glows, ported from hermes-desk's dark
+   chat-wall variants and dimmed so cards stay readable. Static gradients
+   only — nothing to disable under prefers-reduced-motion. Cards keep opaque
+   fills; text never sits directly on a glow area. */
+
+.stage {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(183, 217, 254, 0.16) 0%, transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(255, 228, 239, 0.12) 0%, transparent 50%),
+    linear-gradient(180deg, #171717 0%, #000000 100%);
+}
+
+.stage.wall-sky {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(183, 217, 254, 0.16) 0%, transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(255, 228, 239, 0.12) 0%, transparent 50%),
+    linear-gradient(180deg, #171717 0%, #000000 100%);
+}
+
+.stage.wall-haze {
+  background:
+    repeating-linear-gradient(
+      -32deg,
+      rgba(255, 255, 255, 0.05) 0 1px,
+      transparent 1px 8px
+    ),
+    radial-gradient(1200px 600px at 10% -10%, rgba(183, 217, 254, 0.16) 0%, transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(255, 228, 239, 0.12) 0%, transparent 50%),
+    linear-gradient(180deg, #171717 0%, #000000 100%);
+}
+
+.stage.wall-blush {
+  background:
+    radial-gradient(900px 520px at 88% 8%, rgba(255, 228, 239, 0.14) 0%, transparent 52%),
+    radial-gradient(700px 420px at 18% 108%, rgba(245, 154, 186, 0.1) 0%, transparent 48%),
+    radial-gradient(1100px 560px at 8% -12%, rgba(183, 217, 254, 0.16) 0%, transparent 55%),
+    linear-gradient(180deg, #171717 0%, #000000 100%);
+}
+
+.stage.wall-linen {
+  background-color: #0a0a0a;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1.4px);
+  background-size: 11px 11px;
+}
+
 .world {
   position: absolute;
   left: 0;
@@ -116,7 +213,7 @@ button {
   gap: 10px;
   font-size: 13px;
   font-weight: 600;
-  color: #d6d6d6;
+  color: var(--desk-text-secondary);
   white-space: nowrap;
   transition:
     transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1),
@@ -153,7 +250,7 @@ button {
 }
 
 .gl-mark.working {
-  color: #8fd6a8;
+  color: var(--desk-success);
 }
 
 .gl-mark.needs-you {
@@ -161,7 +258,7 @@ button {
 }
 
 .gl-mark.review {
-  color: #9cc3ff;
+  color: var(--desk-accent);
 }
 
 .group-label .count {
@@ -213,8 +310,8 @@ button {
 }
 
 .card.selected {
-  border-color: rgba(255, 255, 255, 0.32);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+  border-color: rgba(184, 216, 255, 0.5);
+  box-shadow: 0 0 0 3px rgba(184, 216, 255, 0.12);
 }
 
 .card.inert {
@@ -352,14 +449,14 @@ button {
 
 .dot.ask {
   background: var(--warn);
-  box-shadow: 0 0 0 3px rgba(229, 176, 74, 0.15);
+  box-shadow: 0 0 0 3px rgba(239, 197, 140, 0.18);
   animation: pulse 1.8s ease-in-out infinite;
 }
 
 
 @keyframes pulse {
   50% {
-    box-shadow: 0 0 0 5px rgba(229, 176, 74, 0.04);
+    box-shadow: 0 0 0 5px rgba(239, 197, 140, 0.05);
   }
 }
 
@@ -370,7 +467,7 @@ button {
   min-height: 104px;
   font-size: 15px;
   color: var(--text-3);
-  background: #131313;
+  background: var(--desk-surface-0);
 }
 
 .card-new .plus {
@@ -407,13 +504,13 @@ button {
 
 .mark.needs-you {
   background: var(--st-ask);
-  box-shadow: 0 0 0 3px rgba(229, 176, 74, 0.18);
+  box-shadow: 0 0 0 3px rgba(239, 197, 140, 0.2);
   animation: pulse 1.8s ease-in-out infinite;
 }
 
 .mark.review {
   background: var(--st-review);
-  box-shadow: 0 0 0 3px rgba(106, 166, 255, 0.18);
+  box-shadow: 0 0 0 3px rgba(167, 206, 255, 0.2);
 }
 
 .mark.failed {
@@ -431,31 +528,31 @@ button {
   width: 9px;
   height: 5px;
   border-radius: 0;
-  border-left: 1.5px solid #6b6b6b;
-  border-bottom: 1.5px solid #6b6b6b;
+  border-left: 1.5px solid var(--desk-text-tertiary);
+  border-bottom: 1.5px solid var(--desk-text-tertiary);
   transform: translateY(-2px) rotate(-45deg);
 }
 
-/* Working: green edge with a light travelling along it. */
+/* Working: desk success edge with a light travelling along it. */
 .card.st-working {
-  border-color: rgba(70, 211, 126, 0.26);
-  background: #151c18;
-  box-shadow: 0 0 28px rgba(70, 211, 126, 0.07);
+  border-color: rgba(163, 217, 181, 0.3);
+  background: var(--desk-success-surface);
+  box-shadow: 0 0 28px rgba(163, 217, 181, 0.08);
 }
 
 .card.st-working:hover {
-  background: #18201b;
+  background: color-mix(in srgb, var(--desk-success) 7%, var(--desk-success-surface));
 }
 
 .card.st-working .card-accent {
   background:
-    linear-gradient(90deg, transparent, rgba(190, 255, 215, 0.95), transparent) -40% 0 / 40% 100% no-repeat,
-    rgba(70, 211, 126, 0.55);
+    linear-gradient(90deg, transparent, rgba(163, 217, 181, 0.9), transparent) -40% 0 / 40% 100% no-repeat,
+    rgba(163, 217, 181, 0.55);
   animation: sweep 2.4s cubic-bezier(0.45, 0, 0.35, 1) infinite;
 }
 
 .card.st-working .card-status {
-  color: #9adbb1;
+  color: var(--desk-success);
 }
 
 @keyframes sweep {
@@ -466,10 +563,10 @@ button {
   }
 }
 
-/* Needs you: amber, pulsing. */
+/* Needs you: desk warn, pulsing. */
 .card.st-needs-you {
-  border-color: rgba(229, 176, 74, 0.5);
-  background: #1d1a12;
+  border-color: rgba(239, 197, 140, 0.5);
+  background: var(--desk-warn-surface);
   animation: ask-glow 2.2s ease-in-out infinite;
 }
 
@@ -484,18 +581,18 @@ button {
 
 @keyframes ask-glow {
   50% {
-    box-shadow: 0 0 26px rgba(229, 176, 74, 0.16);
+    box-shadow: 0 0 26px rgba(239, 197, 140, 0.18);
   }
 }
 
 /* To review: finished since you last looked. */
 .card.st-review {
-  border-color: rgba(106, 166, 255, 0.32);
-  background: #141820;
+  border-color: rgba(167, 206, 255, 0.32);
+  background: var(--desk-accent-surface);
 }
 
 .card.st-review:hover {
-  background: #171c25;
+  background: color-mix(in srgb, var(--desk-accent) 7%, var(--desk-accent-surface));
 }
 
 .card.st-review .card-accent {
@@ -503,17 +600,17 @@ button {
 }
 
 .card.st-review .card-status .label {
-  color: #a9c8ff;
+  color: var(--desk-accent);
 }
 
 /* Failed: loud when it's news, a red word once you've seen it. */
 .card.st-failed .card-status .label {
-  color: #b9675e;
+  color: var(--desk-danger);
 }
 
 .card.st-failed.fresh {
-  border-color: rgba(229, 103, 90, 0.4);
-  background: #1d1514;
+  border-color: rgba(242, 168, 173, 0.4);
+  background: var(--desk-danger-surface);
 }
 
 .card.st-failed.fresh .card-accent {
@@ -521,23 +618,23 @@ button {
 }
 
 .card.st-failed.fresh .card-status .label {
-  color: #f0948a;
+  color: var(--desk-danger);
 }
 
 /* Done and stopped recede so live work stands out. */
 .card.st-done,
 .card.st-stopped {
-  background: #131313;
+  background: var(--desk-surface-0);
 }
 
 .card.st-done .card-title,
 .card.st-stopped .card-title {
-  color: #b4b4b4;
+  color: var(--desk-text-secondary);
 }
 
 .card.st-done .card-text,
 .card.st-stopped .card-text {
-  color: #6c6c6c;
+  color: var(--desk-text-tertiary);
 }
 
 .card.st-done:hover,
@@ -555,7 +652,7 @@ button {
   content: "";
   position: absolute;
   inset: -16px -20px;
-  border: 1px dashed rgba(70, 211, 126, 0.16);
+  border: 1px dashed rgba(163, 217, 181, 0.2);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -644,9 +741,18 @@ button {
 }
 
 .brand-name {
-  color: var(--text-2);
+  color: var(--text);
   font-weight: 600;
   letter-spacing: 0.01em;
+}
+
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--desk-surface-3);
+  box-shadow: 0 0 0 1px var(--desk-hairline-strong), 0 0 12px rgba(232, 185, 110, 0.25);
 }
 
 .stats {
@@ -669,11 +775,11 @@ button {
   gap: 6px;
   height: 26px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: var(--desk-radius-pill);
   font-size: 12px;
   color: var(--text-3);
   background: rgba(22, 22, 22, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--desk-hairline);
   white-space: nowrap;
   transition:
     background-color 0.15s,
@@ -699,7 +805,7 @@ button {
 
 .chip.working .chip-dot {
   background: var(--st-working);
-  box-shadow: 0 0 0 3px rgba(70, 211, 126, 0.16);
+  box-shadow: 0 0 0 3px rgba(163, 217, 181, 0.18);
   animation: blink-soft 1.6s ease-in-out infinite;
 }
 
@@ -712,8 +818,8 @@ button {
 }
 
 .chip.needs-you:not(.zero) {
-  border-color: rgba(229, 176, 74, 0.45);
-  color: #e9c57d;
+  border-color: rgba(239, 197, 140, 0.45);
+  color: var(--desk-warn);
 }
 
 .chip.zero {
@@ -725,23 +831,23 @@ button {
 }
 
 .chip.on.working {
-  background: rgba(70, 211, 126, 0.14);
-  border-color: rgba(70, 211, 126, 0.5);
+  background: var(--desk-success-surface);
+  border-color: rgba(163, 217, 181, 0.5);
 }
 
 .chip.on.needs-you {
-  background: rgba(229, 176, 74, 0.14);
-  border-color: rgba(229, 176, 74, 0.55);
+  background: var(--desk-warn-surface);
+  border-color: rgba(239, 197, 140, 0.55);
 }
 
 .chip.on.review {
-  background: rgba(106, 166, 255, 0.14);
-  border-color: rgba(106, 166, 255, 0.5);
+  background: var(--desk-accent-surface);
+  border-color: rgba(167, 206, 255, 0.5);
 }
 
 .chip-action {
   font-size: 12px;
-  color: #9cc3ff;
+  color: var(--desk-accent);
   padding: 0 8px;
   white-space: nowrap;
 }
@@ -756,7 +862,7 @@ button {
 
 @keyframes blink-soft {
   50% {
-    box-shadow: 0 0 0 5px rgba(70, 211, 126, 0.05);
+    box-shadow: 0 0 0 5px rgba(163, 217, 181, 0.06);
   }
 }
 
@@ -805,9 +911,9 @@ button {
   width: 210px;
   height: 30px;
   padding: 0 11px;
-  border-radius: 999px;
+  border-radius: var(--desk-radius-pill);
   background: rgba(22, 22, 22, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--desk-hairline);
   color: var(--text-4);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -819,7 +925,7 @@ button {
 .search:focus-within,
 .search.has-value {
   width: min(340px, 50vw);
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: var(--desk-hairline-strong);
   color: var(--text-3);
 }
 
@@ -852,7 +958,7 @@ button {
   font-size: 11px;
   color: #b7afff;
   background: rgba(138, 124, 255, 0.12);
-  border-radius: 999px;
+  border-radius: var(--desk-radius-pill);
   padding: 3px 9px;
 }
 
@@ -862,15 +968,16 @@ button {
   gap: 6px;
   height: 28px;
   padding: 0 12px 0 10px;
-  border-radius: 999px;
-  background: #ededed;
-  color: #0a0a0a;
+  border-radius: var(--desk-radius-pill);
+  background: var(--desk-accent);
+  color: var(--desk-accent-ink);
   font-size: 12.5px;
   font-weight: 600;
 }
 
 .new-btn:hover {
-  background: #fff;
+  background: var(--desk-accent);
+  box-shadow: inset 0 0 0 1px var(--desk-accent-ink);
 }
 
 .new-btn .plus {
@@ -883,7 +990,7 @@ button {
   height: 28px;
   border-radius: 50%;
   color: var(--text-4);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--desk-hairline);
   background: rgba(22, 22, 22, 0.86);
   font-size: 12px;
 }
@@ -902,10 +1009,10 @@ button {
   align-items: center;
   gap: 4px;
   padding: 4px;
-  border-radius: 999px;
+  border-radius: var(--desk-radius-pill);
   background: rgba(20, 20, 20, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--desk-hairline-strong);
+  box-shadow: var(--desk-shadow-popover);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   max-width: calc(100vw - 32px);
@@ -925,7 +1032,7 @@ button {
 .seg-btn {
   height: 28px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--desk-radius-pill);
   font-size: 12.5px;
   color: var(--text-3);
   white-space: nowrap;
@@ -939,8 +1046,8 @@ button {
 }
 
 .seg-btn.on {
-  background: #2b2b2b;
-  color: #fff;
+  background: var(--desk-surface-3);
+  color: var(--desk-text-primary);
 }
 
 .seg-btn.with-spin {
@@ -963,7 +1070,7 @@ button {
 .dock-sep {
   width: 1px;
   height: 16px;
-  background: #333;
+  background: var(--desk-hairline-strong);
   margin: 0 4px;
   flex: none;
 }
@@ -976,11 +1083,9 @@ button {
   display: none;
   flex-direction: column;
   background: var(--panel);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 4px;
-  box-shadow:
-    0 30px 80px rgba(0, 0, 0, 0.6),
-    0 2px 0 rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--desk-hairline-strong);
+  border-radius: var(--desk-radius-lg);
+  box-shadow: var(--desk-shadow-modal);
   overflow: hidden;
 }
 
@@ -1051,7 +1156,7 @@ button {
 }
 
 .panel.working .head-status {
-  color: #9adbb1;
+  color: var(--desk-success);
 }
 
 .panel[data-status="needs-you"] .head-status {
@@ -1059,7 +1164,7 @@ button {
 }
 
 .panel[data-status="failed"] .head-status {
-  color: #f0948a;
+  color: var(--desk-danger);
 }
 
 /* The open card keeps its status edge. */
@@ -1074,7 +1179,7 @@ button {
 }
 
 .panel[data-status="working"]::before {
-  background: rgba(70, 211, 126, 0.55);
+  background: rgba(163, 217, 181, 0.55);
 }
 
 .panel[data-status="needs-you"]::before {
@@ -1095,13 +1200,13 @@ button {
 .head-btn {
   height: 26px;
   padding: 0 9px;
-  border-radius: 6px;
+  border-radius: var(--desk-radius-sm);
   color: var(--text-3);
   font-size: 13px;
 }
 
 .head-btn:hover {
-  background: #222;
+  background: var(--desk-surface-3);
   color: var(--text);
 }
 
@@ -1122,7 +1227,7 @@ button {
   line-height: 1.18;
   font-weight: 600;
   letter-spacing: -0.015em;
-  color: #f4f4f4;
+  color: var(--desk-text-primary);
   outline: none;
   flex: none;
   overflow-wrap: anywhere;
@@ -1167,7 +1272,7 @@ button {
   overscroll-behavior: contain;
   padding: 22px clamp(18px, 6vw, 64px) 28px;
   scrollbar-width: thin;
-  scrollbar-color: #333 transparent;
+  scrollbar-color: var(--desk-surface-4) transparent;
 }
 
 .earlier {
@@ -1204,7 +1309,7 @@ button {
   min-width: 0;
   font-size: 15px;
   line-height: 1.6;
-  color: #d4d4d4;
+  color: var(--desk-text-secondary);
 }
 
 .msg.user {
@@ -1214,7 +1319,7 @@ button {
 .msg.user .user-text,
 .msg.inbox .user-text {
   font-weight: 600;
-  color: #f2f2f2;
+  color: var(--desk-text-primary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1246,8 +1351,8 @@ button {
   display: block;
   max-width: min(420px, 100%);
   margin-top: 12px;
-  border-radius: 4px;
-  border: 1px solid #262626;
+  border-radius: var(--desk-radius-sm);
+  border: 1px solid var(--desk-hairline-strong);
 }
 
 .file-chip {
@@ -1255,8 +1360,8 @@ button {
   margin-top: 8px;
   font-size: 12px;
   color: var(--text-3);
-  background: #1e1e1e;
-  border-radius: 4px;
+  background: var(--desk-surface-2);
+  border-radius: var(--desk-radius-sm);
   padding: 2px 8px;
 }
 
@@ -1274,7 +1379,7 @@ button {
 }
 
 .md strong {
-  color: #f4f4f4;
+  color: var(--desk-text-primary);
   font-weight: 650;
 }
 
@@ -1289,16 +1394,16 @@ button {
 
 .md code {
   font: 0.86em var(--mono);
-  background: #222;
-  color: #e6e6e6;
+  background: var(--desk-surface-3);
+  color: var(--desk-text-secondary);
   border-radius: 999px;
   padding: 1px 7px;
 }
 
 .md pre {
   background: #101010;
-  border: 1px solid #222;
-  border-radius: 4px;
+  border: 1px solid var(--desk-hairline-strong);
+  border-radius: var(--desk-radius-sm);
   padding: 12px 14px;
   overflow-x: auto;
 }
@@ -1334,7 +1439,7 @@ button {
   height: 11px;
   margin-right: 7px;
   border: 1px solid #555;
-  border-radius: 2px;
+  border-radius: var(--desk-radius-xs);
   vertical-align: -1px;
 }
 
@@ -1349,11 +1454,11 @@ button {
 .md h6 {
   margin: 18px 0 8px;
   font-size: 15px;
-  color: #f0f0f0;
+  color: var(--desk-text-primary);
 }
 
 .md blockquote {
-  border-left: 2px solid #333;
+  border-left: 2px solid var(--desk-hairline-strong);
   padding-left: 12px;
   color: var(--text-3);
 }
@@ -1375,7 +1480,7 @@ button {
 
 .md th,
 .md td {
-  border-bottom: 1px solid #262626;
+  border-bottom: 1px solid var(--desk-hairline);
   padding: 5px 12px 5px 0;
   text-align: left;
 }
@@ -1471,8 +1576,8 @@ button {
   max-height: 280px;
   overflow: auto;
   background: #101010;
-  border: 1px solid #222;
-  border-radius: 4px;
+  border: 1px solid var(--desk-hairline-strong);
+  border-radius: var(--desk-radius-sm);
   padding: 10px 12px;
   font: 11.5px/1.5 var(--mono);
   color: var(--text-3);
@@ -1521,9 +1626,9 @@ button {
 }
 
 .msg.ask .body {
-  border: 1px solid rgba(229, 176, 74, 0.28);
-  background: rgba(229, 176, 74, 0.04);
-  border-radius: 4px;
+  border: 1px solid rgba(239, 197, 140, 0.3);
+  background: rgba(239, 197, 140, 0.06);
+  border-radius: var(--desk-radius-md);
   padding: 14px 16px;
 }
 
@@ -1533,7 +1638,7 @@ button {
 
 .ask-title {
   font-weight: 600;
-  color: #f2f2f2;
+  color: var(--desk-text-primary);
 }
 
 .ask-resources {
@@ -1545,8 +1650,8 @@ button {
 
 .ask-resources code {
   font: 12px var(--mono);
-  background: #1f1f1f;
-  border-radius: 4px;
+  background: var(--desk-surface-3);
+  border-radius: var(--desk-radius-xs);
   padding: 2px 7px;
   color: var(--text-2);
   overflow-wrap: anywhere;
@@ -1585,9 +1690,9 @@ button {
 .ask-form input[type="text"],
 .ask-form input[type="number"],
 .ask-form select {
-  background: #101010;
-  border: 1px solid #2a2a2a;
-  border-radius: 4px;
+  background: var(--desk-surface-0);
+  border: 1px solid var(--desk-hairline-strong);
+  border-radius: var(--desk-radius-sm);
   color: var(--text);
   font: 13px var(--font);
   padding: 6px 9px;
@@ -1596,7 +1701,7 @@ button {
 
 .ask-form input:focus,
 .ask-form select:focus {
-  border-color: #444;
+  border-color: var(--desk-control-border);
 }
 
 .dim {
@@ -1606,25 +1711,26 @@ button {
 .btn {
   height: 30px;
   padding: 0 14px;
-  border-radius: 6px;
-  background: #242424;
+  border-radius: var(--desk-radius-sm);
+  background: var(--desk-surface-3);
   color: var(--text);
   font-size: 13px;
-  border: 1px solid #2f2f2f;
+  border: 1px solid var(--desk-hairline-strong);
 }
 
 .btn:hover {
-  background: #2c2c2c;
+  background: var(--desk-surface-4);
 }
 
 .btn.primary {
-  background: #ededed;
-  color: #0a0a0a;
-  border-color: #ededed;
+  background: var(--desk-accent);
+  color: var(--desk-accent-ink);
+  border-color: transparent;
 }
 
 .btn.primary:hover {
-  background: #fff;
+  background: var(--desk-accent);
+  box-shadow: inset 0 0 0 1px var(--desk-accent-ink);
 }
 
 .btn.ghost {
@@ -1683,8 +1789,8 @@ button {
   gap: 8px;
   font-size: 12px;
   color: var(--text-3);
-  background: #1e1e1e;
-  border-radius: 6px;
+  background: var(--desk-surface-2);
+  border-radius: var(--desk-radius-sm);
   padding: 4px 6px;
 }
 
@@ -1708,10 +1814,10 @@ button {
   max-width: 380px;
   max-height: 60vh;
   overflow-y: auto;
-  background: #1c1c1c;
-  border: 1px solid #2c2c2c;
-  border-radius: 8px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  background: var(--desk-surface-2);
+  border: 1px solid var(--desk-hairline-strong);
+  border-radius: var(--desk-radius-md);
+  box-shadow: var(--desk-shadow-popover);
   padding: 5px;
 }
 
@@ -1723,12 +1829,12 @@ button {
   align-items: center;
   width: 100%;
   text-align: left;
-  border-radius: 5px;
+  border-radius: var(--desk-radius-sm);
   padding: 7px 9px;
 }
 
 .pop-item:hover {
-  background: #272727;
+  background: var(--desk-surface-3);
 }
 
 .pop-item .spin {
@@ -1778,10 +1884,10 @@ button {
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  background: #171717;
-  border: 1px solid #2c2c2c;
-  border-radius: 10px;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  background: var(--desk-surface-1);
+  border: 1px solid var(--desk-hairline-strong);
+  border-radius: var(--desk-radius-lg);
+  box-shadow: var(--desk-shadow-modal);
   overflow: hidden;
 }
 
@@ -1804,9 +1910,9 @@ button {
   gap: 7px;
   max-width: 70%;
   padding: 5px 10px;
-  border-radius: 7px;
-  border: 1px solid #2c2c2c;
-  background: #121212;
+  border-radius: var(--desk-radius-sm);
+  border: 1px solid var(--desk-hairline-strong);
+  background: var(--desk-surface-0);
   font-size: 12.5px;
   white-space: nowrap;
   overflow: hidden;
@@ -1814,8 +1920,8 @@ button {
 
 .picker-model-btn:hover,
 .picker-model-btn.on {
-  border-color: #444;
-  background: #1d1d1d;
+  border-color: var(--desk-control-border);
+  background: var(--desk-surface-2);
 }
 
 .picker-model-btn .pm-k {
@@ -1847,16 +1953,16 @@ button {
 .picker-input {
   margin: 10px 12px 6px;
   padding: 10px 12px;
-  background: #0f0f0f;
-  border: 1px solid #2c2c2c;
-  border-radius: 7px;
+  background: var(--desk-surface-0);
+  border: 1px solid var(--desk-hairline-strong);
+  border-radius: var(--desk-radius-sm);
   color: var(--text);
   font: 14px var(--font);
   outline: none;
 }
 
 .picker-input:focus {
-  border-color: #444;
+  border-color: var(--desk-control-border);
 }
 
 .picker-list {
@@ -1871,13 +1977,13 @@ button {
   column-gap: 8px;
   width: 100%;
   text-align: left;
-  border-radius: 6px;
+  border-radius: var(--desk-radius-sm);
   padding: 7px 10px;
 }
 
 .picker-item.active,
 .picker-item:hover {
-  background: #262626;
+  background: var(--desk-surface-3);
 }
 
 .picker-icon {
@@ -1918,7 +2024,7 @@ button {
 }
 
 .picker-empty.error {
-  color: #f0948a;
+  color: var(--desk-danger);
 }
 
 .picker-foot {
@@ -1926,15 +2032,15 @@ button {
   flex-wrap: wrap;
   gap: 14px;
   padding: 9px 16px;
-  border-top: 1px solid #242424;
+  border-top: 1px solid var(--desk-hairline);
   font-size: 11.5px;
   color: var(--text-4);
 }
 
 .picker-foot kbd {
   font: 10.5px var(--mono);
-  background: #242424;
-  border-radius: 3px;
+  background: var(--desk-surface-3);
+  border-radius: var(--desk-radius-xs);
   padding: 1px 5px;
   margin-right: 3px;
   color: var(--text-3);
@@ -1967,8 +2073,14 @@ button {
 }
 
 .empty-mark {
-  font-size: 28px;
+  display: flex;
   color: var(--text-4);
+}
+
+.empty-pip {
+  width: 112px;
+  height: 112px;
+  filter: drop-shadow(0 10px 36px rgba(232, 185, 110, 0.28));
 }
 
 .empty-actions {
@@ -1983,10 +2095,10 @@ button {
   top: 52px;
   z-index: 1100;
   width: min(340px, calc(100vw - 32px));
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 10px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  background: var(--desk-surface-2);
+  border: 1px solid var(--desk-hairline-strong);
+  border-radius: var(--desk-radius-lg);
+  box-shadow: var(--desk-shadow-popover);
   padding: 14px 18px 8px;
   font-size: 12.5px;
 }
@@ -2032,12 +2144,13 @@ button {
 }
 
 .toast {
-  background: #242424;
-  border: 1px solid #333;
+  background: var(--desk-surface-3);
+  border: 1px solid var(--desk-hairline-strong);
   color: var(--text);
   font-size: 13px;
-  border-radius: 8px;
+  border-radius: var(--desk-radius-sm);
   padding: 8px 14px;
+  box-shadow: var(--desk-shadow-popover);
   opacity: 0;
   transform: translateY(6px);
   transition:
@@ -2138,9 +2251,9 @@ button {
 
 .pop-filter {
   margin: 6px;
-  background: #121212;
-  border: 1px solid #2c2c2c;
-  border-radius: 6px;
+  background: var(--desk-surface-0);
+  border: 1px solid var(--desk-hairline-strong);
+  border-radius: var(--desk-radius-sm);
   color: var(--text);
   font: 13px var(--font);
   padding: 7px 9px;
@@ -2172,17 +2285,17 @@ button {
   gap: 7px;
   height: 28px;
   padding: 0 11px;
-  border-radius: 999px;
+  border-radius: var(--desk-radius-pill);
   font-size: 12.5px;
   color: var(--text-2);
   background: rgba(22, 22, 22, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--desk-hairline);
 }
 
 .tiles-open-btn:hover,
 .tiles-open-btn.on {
   color: var(--text);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--desk-hairline-strong);
 }
 
 .tiles-icon {
@@ -2204,8 +2317,8 @@ button {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 999px;
-  background: #2a2a2a;
+  border-radius: var(--desk-radius-pill);
+  background: var(--desk-surface-3);
   font-size: 11px;
   font-weight: 650;
   display: inline-grid;
@@ -2214,8 +2327,8 @@ button {
 }
 
 .tiles-open-btn.live .tiles-n {
-  background: rgba(70, 211, 126, 0.2);
-  color: #a6e8bd;
+  background: rgba(163, 217, 181, 0.2);
+  color: var(--desk-success);
 }
 
 .tiles-view {
@@ -2244,7 +2357,7 @@ button {
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  border-bottom: 1px solid #1e1e1e;
+  border-bottom: 1px solid var(--desk-hairline);
 }
 
 .tiles-title {
@@ -2276,7 +2389,7 @@ button {
 }
 
 .tc.working {
-  color: #8fd6a8;
+  color: var(--desk-success);
 }
 
 .tc.needs-you {
@@ -2284,7 +2397,7 @@ button {
 }
 
 .tc.review {
-  color: #9cc3ff;
+  color: var(--desk-accent);
 }
 
 .tiles-tools {
@@ -2306,22 +2419,22 @@ button {
 .tiles-btn {
   height: 28px;
   padding: 0 12px;
-  border-radius: 7px;
+  border-radius: var(--desk-radius-sm);
   font-size: 12.5px;
-  background: #1c1c1c;
-  border: 1px solid #2c2c2c;
+  background: var(--desk-surface-2);
+  border: 1px solid var(--desk-hairline-strong);
   color: var(--text-2);
 }
 
 .tiles-btn:hover {
   color: var(--text);
-  border-color: #3a3a3a;
+  border-color: var(--desk-control-border);
 }
 
 .tiles-btn.primary {
-  background: #ededed;
-  color: #0a0a0a;
-  border-color: #ededed;
+  background: var(--desk-accent);
+  color: var(--desk-accent-ink);
+  border-color: transparent;
   font-weight: 600;
 }
 
@@ -2375,10 +2488,10 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #141414;
-  border: 1px solid #232323;
+  background: var(--desk-surface-1);
+  border: 1px solid var(--desk-hairline-strong);
   border-left: 3px solid var(--project);
-  border-radius: 5px;
+  border-radius: var(--desk-radius-md);
   overflow: hidden;
 }
 
@@ -2387,12 +2500,12 @@ button {
 }
 
 .tile[data-status="working"] {
-  border-top-color: rgba(70, 211, 126, 0.55);
-  box-shadow: inset 0 2px 0 rgba(70, 211, 126, 0.55);
+  border-top-color: rgba(163, 217, 181, 0.55);
+  box-shadow: inset 0 2px 0 rgba(163, 217, 181, 0.55);
 }
 
 .tile[data-status="needs-you"] {
-  border-color: rgba(229, 176, 74, 0.55);
+  border-color: rgba(239, 197, 140, 0.55);
   border-left-color: var(--project);
   box-shadow: inset 0 2px 0 var(--st-ask);
   animation: ask-glow 2.2s ease-in-out infinite;
@@ -2409,8 +2522,8 @@ button {
 .tile-head {
   flex: none;
   padding: 8px 8px 8px 12px;
-  border-bottom: 1px solid #1f1f1f;
-  background: color-mix(in srgb, var(--project) 6%, #141414);
+  border-bottom: 1px solid var(--desk-hairline);
+  background: color-mix(in srgb, var(--project) 6%, var(--desk-surface-1));
   cursor: default;
   user-select: none;
 }
@@ -2454,7 +2567,7 @@ button {
 }
 
 .tile[data-status="working"] .tile-status {
-  color: #9adbb1;
+  color: var(--desk-success);
 }
 
 .tile[data-status="needs-you"] .tile-status {
@@ -2463,11 +2576,11 @@ button {
 }
 
 .tile[data-status="review"] .tile-status {
-  color: #a9c8ff;
+  color: var(--desk-accent);
 }
 
 .tile[data-status="failed"] .tile-status {
-  color: #f0948a;
+  color: var(--desk-danger);
 }
 
 .tile-title {
@@ -2509,7 +2622,7 @@ button {
   min-width: 24px;
   height: 22px;
   padding: 0 5px;
-  border-radius: 5px;
+  border-radius: var(--desk-radius-sm);
   font-size: 12.5px;
   color: var(--text-4);
   display: inline-grid;
@@ -2517,7 +2630,7 @@ button {
 }
 
 .tile-btn:hover {
-  background: #252525;
+  background: var(--desk-surface-3);
   color: var(--text);
 }
 
@@ -2538,7 +2651,7 @@ button {
   overscroll-behavior: contain;
   padding: 12px 14px 10px;
   scrollbar-width: thin;
-  scrollbar-color: #333 transparent;
+  scrollbar-color: var(--desk-surface-4) transparent;
 }
 
 .tile-composer {
@@ -2547,7 +2660,7 @@ button {
   align-items: flex-start;
   gap: 10px;
   padding: 8px 12px 10px;
-  border-top: 1px solid #1f1f1f;
+  border-top: 1px solid var(--desk-hairline);
 }
 
 .tile-input {
@@ -2597,7 +2710,7 @@ button {
 
 .transcript.compact .msg.user .body,
 .transcript.compact .msg.inbox .body {
-  border-left: 2px solid #333;
+  border-left: 2px solid var(--desk-surface-4);
   padding-left: 9px;
 }
 
@@ -2663,11 +2776,11 @@ button {
   gap: 7px;
   height: 28px;
   padding: 0 11px;
-  border-radius: 999px;
+  border-radius: var(--desk-radius-pill);
   font-size: 12.5px;
   color: var(--text-3);
   background: rgba(22, 22, 22, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--desk-hairline);
   white-space: nowrap;
 }
 
@@ -2684,48 +2797,48 @@ button {
 
 .aa-toggle.confirming {
   color: var(--st-ask);
-  border-color: rgba(229, 176, 74, 0.6);
+  border-color: rgba(239, 197, 140, 0.6);
 }
 
 .aa-toggle.on {
-  color: #f1cf88;
-  background: rgba(229, 176, 74, 0.13);
-  border-color: rgba(229, 176, 74, 0.55);
+  color: var(--desk-warn);
+  background: var(--desk-warn-surface);
+  border-color: rgba(239, 197, 140, 0.55);
 }
 
 .aa-toggle.on .aa-dot {
   border-color: var(--st-ask);
   background: var(--st-ask);
-  box-shadow: 0 0 0 3px rgba(229, 176, 74, 0.2);
+  box-shadow: 0 0 0 3px rgba(239, 197, 140, 0.2);
 }
 
 .chip-action.allow {
-  color: #f1cf88;
+  color: var(--desk-warn);
   font-weight: 600;
 }
 
 .btn.allow-all {
-  border-color: rgba(229, 176, 74, 0.45);
-  color: #f1cf88;
+  border-color: rgba(239, 197, 140, 0.45);
+  color: var(--desk-warn);
 }
 
 .btn.allow-all:hover {
-  background: rgba(229, 176, 74, 0.12);
+  background: var(--desk-warn-surface);
 }
 
 .link.allow-pending {
   align-self: center;
   margin-left: 4px;
   font-size: 12.5px;
-  color: #e9c57d;
+  color: var(--desk-warn);
 }
 
 .auto-badge {
   font-size: 11px;
   font-weight: 600;
-  color: #f1cf88;
-  background: rgba(229, 176, 74, 0.12);
-  border-radius: 999px;
+  color: var(--desk-warn);
+  background: var(--desk-warn-surface);
+  border-radius: var(--desk-radius-pill);
   padding: 2px 8px;
   white-space: nowrap;
 }
@@ -2749,7 +2862,7 @@ button {
 
 .tile.auto .tile-project::after {
   content: " · auto";
-  color: #e9c57d;
+  color: var(--desk-warn);
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
