@@ -9,6 +9,9 @@ It is a port of [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas)
 ## Features
 
 ### Canvas
+
+![Hermes Canvas: project columns of live session cards on the amber desk wallpaper](assets/screenshot-canvas.png)
+
 - **Infinite pan and zoom**: Pan smoothly by dragging or scrolling; zoom with pinch or Command/Ctrl + scroll. Camera motion includes momentum and elastic boundaries (overshoot tops out at 14% of the screen).
 - **Project grouping**: Sessions are arranged as cards grouped by project folder (git root, then working directory), with active work sorted to the top.
 - **Dynamic layouts**: Switch between Satellites, Fold, Tabs, and Tree layouts on the fly.
@@ -28,6 +31,9 @@ It is a port of [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas)
 - **Hermes has no permission queue**, so there is no "needs you" state: permission/inbox/form lists always read empty.
 
 ### Tiles
+
+![Tiles view: running sessions side by side, each with its own transcript and composer](assets/screenshot-tiles.png)
+
 - **Adaptive terminal grid**: Live multi-session view displaying every running session side by side in a screen-fitted layout (`T` or `#tiles`).
 - **Live streaming**: Per-tile transcripts display streaming outputs and single-line folded tool executions with color-coded project badges.
 - **Integrated controls**: Each tile features an independent composer (`Enter` to steer, `Tab` to queue) — steering spawns `hermes chat --resume <id>` and streams back `stream-json` events.
@@ -35,6 +41,9 @@ It is a port of [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas)
 - **Subagent visibility**: Hermes sessions with `parent_session_id` nest as child cards, like OpenCode subagents.
 
 ### Sessions
+
+![Session panel: a transcript open in place, with an inline permission prompt and the steer composer](assets/screenshot-session.png)
+
 - **In-place inspection**: Click any card or press `Enter` to open its full transcript directly in place on the map.
 - **Streaming transcripts**: Renders live text streams, reasoning, and tool operations; tool-result JSON envelopes (`{"output": …}`) display just the output.
 - **Steer and queue**: `Enter` sends immediately and steers a running agent mid-turn (previous turn is interrupted); `Tab` queues messages to execute after the current turn completes.
