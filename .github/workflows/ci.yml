@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # This repo's branch is `master`; keep `main` too for upstream/renamed remotes.
+    branches: [main, master]
   pull_request:
 
 jobs:
