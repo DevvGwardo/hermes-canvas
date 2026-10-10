@@ -1,0 +1,8 @@
+# Line endings are decided here, not by each contributor's core.autocrlf.
+# The repo stores LF; checkouts get LF on every platform, which matches CI.
+* text=auto eol=lf
+
+# Never touch these byte-for-byte: assets that must survive a clone intact.
+*.woff2 binary
+*.png binary
+*.jpg binary
