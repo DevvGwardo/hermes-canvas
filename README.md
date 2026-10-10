@@ -23,12 +23,14 @@ It is a port of [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas)
 - **Edge color indicator**: A 3-pixel status line along the top card edge remains visible at all zoom levels, reinforced by border color and background tint.
 - **Clear status hierarchy**:
   - **Working** (green): Agent is executing; animated light sweeps the top edge, and the footer shows the active tool.
-  - **To review** (blue): Session finished within the last 48 hours and has not yet been viewed.
+  - **Needs you** (yellow): A permission request or question is waiting on you. Demo mode only - see below.
+  - **To review** (amber): Session finished within the last 48 hours and has not yet been viewed.
+  - **Failed** (red): The run ended in an error; an unseen failure keeps counting as needing review until you open it.
   - **Stopped** (neutral): Session was manually interrupted.
   - **Done** (dimmed): Completed and viewed; dims so active work stands out.
 - **Read state**: Opening a session marks it viewed in the canvas sidecar (`<hermes-home>/canvas_viewed.json`); Hermes' own `last_read_at` is left untouched.
 - **Attention tracking**: Top bar tallies counts for *working* and *to review* with single-click filters; browser tab title mirrors counts; press `]` and `[` to cycle through sessions requiring attention.
-- **Hermes has no permission queue**, so there is no "needs you" state: permission/inbox/form lists always read empty.
+- **Hermes has no permission queue**, so live sessions never sit in the "needs you" state: the backend's permission/inbox/form lists always read empty. `--demo` mode fakes those prompts, which is why the screenshots show yellow *needs permission* chips and inline permission cards.
 
 ### Tiles
 
