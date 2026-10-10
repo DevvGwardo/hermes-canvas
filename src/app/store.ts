@@ -5,7 +5,7 @@ import { basename, describeTool, lastAssistantText } from "./format"
 import { previewBlocks } from "./markdown"
 import type { FormInfo, Message, OcEvent, PermissionRequest, PermissionRule, Project, Session } from "./types"
 
-/** The rule that tells OpenCode to allow everything in a session. */
+/** The rule that allows everything in a session (Hermes maps it to `--yolo` on canvas-spawned prompts). */
 export const ALLOW_ALL: PermissionRule = { action: "*", resource: "*", effect: "allow" }
 const isAllowAll = (r: PermissionRule) => r.action === "*" && r.resource === "*" && r.effect === "allow"
 const AUTO_KEY = "hermes-canvas.autoApprove"
@@ -407,7 +407,7 @@ export class Store {
     if (this.autoApproveAll || this.sessionAutoApproves(req.sessionID)) void this.approve(req, true).catch(() => {})
   }
 
-  /** Tell OpenCode you've seen this session's latest result (syncs to other clients). */
+  /** Record that you've seen this session's latest result (canvas sidecar, syncs to other clients). */
   markViewed(id: string) {
     const s = this.sessions.get(id)
     if (!s || !this.unseen(id)) return

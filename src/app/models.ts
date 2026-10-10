@@ -1,5 +1,5 @@
 // Model choice: the canvas remembers the last model you picked and uses it
-// for sessions it creates. Unset means OpenCode's own configured default.
+// for sessions it creates. Unset means Hermes' own configured default.
 
 import type { Backend, ModelOption } from "./backend"
 import type { ModelRef } from "./types"

@@ -565,7 +565,7 @@ export class Transcript {
       return b
     }
     const everything = h("button", "btn allow-all", "Allow everything in this session") as HTMLButtonElement
-    everything.title = "Approve this and every future request in this session (saved on the OpenCode server)"
+    everything.title = "Approve this and every future request in this session (saved on the Hermes session)"
     everything.addEventListener("click", () =>
       this.act(async () => {
         await this.store.setSessionAutoApprove(req.sessionID, true)
@@ -631,7 +631,7 @@ export class Transcript {
         field.append(sel)
         getters.push([f, () => sel.value])
       } else if (f.type === "external") {
-        field.append(h("span", "dim", "Answer this one in OpenCode."))
+        field.append(h("span", "dim", "Answer this one in Hermes."))
       } else {
         const inp = h("input") as HTMLInputElement
         inp.type = f.type === "number" || f.type === "integer" ? "number" : "text"

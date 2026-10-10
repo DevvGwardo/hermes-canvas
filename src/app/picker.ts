@@ -48,7 +48,7 @@ export class NewSessionPicker {
   private mode: "where" | "model" = "where"
   private whereQuery = ""
   private preferred?: string
-  /** undefined = OpenCode's configured default. */
+  /** undefined = Hermes' configured default. */
   private model?: ModelRef
 
   constructor(
