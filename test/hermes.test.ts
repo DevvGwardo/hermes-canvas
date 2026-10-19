@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import { homedir } from "node:os"
-import { mapMessages, mapSession, parseModel, prettyToolText, projectIDFor, projectNameFor, sessionDir } from "../src/server/hermes"
+import { hermesHome, mapMessages, mapSession, parseModel, prettyToolText, projectIDFor, projectNameFor, sessionDir } from "../src/server/hermes"
 
 describe("hermes row mapping", () => {
   test("splits provider/model and maps tokens, cost, project", () => {
@@ -176,5 +176,26 @@ describe("project grouping", () => {
     })
     expect(s.location.directory).toBe("/repo/storefront-web")
     expect(projectNameFor(s.location.directory, "cli")).toBe("storefront-web")
+  })
+})
+
+describe("hermesHome", () => {
+  // Windows-only branch (the LOCALAPPDATA default, T53). Skipped elsewhere
+  // rather than faked: process.platform is not injectable.
+  test.skipIf(process.platform !== "win32")("defaults under LOCALAPPDATA, falling back to homedir", () => {
+    const savedHome = process.env.HERMES_HOME
+    const savedLa = process.env.LOCALAPPDATA
+    try {
+      delete process.env.HERMES_HOME
+      process.env.LOCALAPPDATA = "C:\\Users\\tester\\AppData\\Local"
+      expect(hermesHome()).toBe(join("C:\\Users\\tester\\AppData\\Local", "hermes"))
+      delete process.env.LOCALAPPDATA // no LOCALAPPDATA: falls back under homedir
+      expect(hermesHome()).toBe(join(homedir(), "AppData", "Local", "hermes"))
+    } finally {
+      if (savedHome !== undefined) process.env.HERMES_HOME = savedHome
+      else delete process.env.HERMES_HOME
+      if (savedLa !== undefined) process.env.LOCALAPPDATA = savedLa
+      else delete process.env.LOCALAPPDATA
+    }
   })
 })
