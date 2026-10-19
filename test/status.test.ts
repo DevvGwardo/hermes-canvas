@@ -84,4 +84,47 @@ describe("status", () => {
     expect(viewedCalls.at(-1)![0]).toBe("a")
     expect(viewedCalls.at(-1)![1]).toBeGreaterThanOrEqual(now - H)
   })
+
+  // ---- T41: child-aware derivations the existing tests only approached -
+  // orphaned roots, the permission arm of the child walk, and the full
+  // activityLabel matrix (the tiles test pins only the last fallback).
+
+  test("an orphaned child counts as its own root", () => {
+    const s = store(session("c1", {}, { parentID: "gone" }), session("p1", {}), session("c2", {}, { parentID: "p1" }))
+    expect(s.roots().map((x) => x.id).sort()).toEqual(["c1", "p1"]) // the vanished parent leaves c1 surfaced; c2 stays nested
+    expect(s.subagentCount("p1")).toBe(1)
+  })
+
+  test("a child's pending permission blocks its parent (the permission arm)", () => {
+    const s = store(session("p1", { idle: now - H, viewed: now }), session("c1", {}, { parentID: "p1" }))
+    expect(s.needsInput("p1")).toBeUndefined()
+    s.permissions.set("c1", [{ id: "per_1", sessionID: "c1", action: "shell", resources: [] }])
+    expect(s.needsInput("c1")).toBe("permission") // the direct arm
+    expect(s.needsInput("p1")).toBe("permission") // and the child walk that status() depends on
+    expect(s.status("p1", now)).toBe("needs-you")
+  })
+
+  test("activityLabel prefers own running, then a running child, then falls back", () => {
+    const s = store(session("p1", { idle: now - H, viewed: now }), session("c1", {}, { parentID: "p1" }))
+
+    expect(s.activityLabel("p1")).toBe("Working…") // nothing known at all
+
+    s.activity.set("p1", "Compacting context…")
+    expect(s.activityLabel("p1")).toBe("Compacting context…") // own label without running still shows
+
+    // Own + running short-circuits even when a busy child has a fresher label.
+    s.running.add("p1")
+    s.activity.set("c1", "Reading sessions.ts…")
+    s.running.add("c1")
+    expect(s.activityLabel("p1")).toBe("Compacting context…")
+
+    // Without an own label the parent card shows what its busy child is doing.
+    s.activity.delete("p1")
+    s.running.delete("p1")
+    expect(s.activityLabel("p1")).toBe("Reading sessions.ts…")
+
+    // A child that stopped no longer labels the parent.
+    s.running.delete("c1")
+    expect(s.activityLabel("p1")).toBe("Working…")
+  })
 })
