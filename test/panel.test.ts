@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test"
 import type { Backend } from "../src/app/backend"
+import { timeAgo } from "../src/app/format"
 import { SessionPanel } from "../src/app/panel"
 import { Store } from "../src/app/store"
 import type { Session } from "../src/app/types"
@@ -234,6 +235,7 @@ function panelBackend(sessions: Session[]) {
   const permCalls: Array<{ id: string; rules: unknown }> = []
   const renames: Array<{ id: string; title: string }> = []
   const interrupts: string[] = []
+  const viewed: string[] = []
   let failPrompt = false
   let failPerms = false
   const backend = {
@@ -244,7 +246,9 @@ function panelBackend(sessions: Session[]) {
       data: [{ type: "user", id: "m1", time: { created: NOW - 60_000 }, text: "hello" }],
     }),
     inbox: async () => [],
-    markViewed: async () => {},
+    markViewed: async (id: string) => {
+      viewed.push(id)
+    },
     prompt: async (id: string, msg: { text?: string; delivery?: string }) => {
       if (failPrompt) throw new Error("nope")
       prompts.push({ id, ...msg })
@@ -271,6 +275,7 @@ function panelBackend(sessions: Session[]) {
     permCalls,
     renames,
     interrupts,
+    viewed,
     setFailPrompt: (f: boolean) => void (failPrompt = f),
     setFailPerms: (f: boolean) => void (failPerms = f),
   }
@@ -296,7 +301,9 @@ beforeEach(() => {
     activeElement: null,
     getSelection: () => ({ selectAllChildren: () => {} }),
   }
-  ;(globalThis as any).window = { devicePixelRatio: 1, addEventListener: () => {} }
+  const win = new FakeEl("div") as any // FakeEl records resize so the test can fire it
+  win.devicePixelRatio = 1
+  ;(globalThis as any).window = win
   ;(globalThis as any).localStorage = {
     getItem: () => null,
     setItem: () => {},
@@ -335,7 +342,10 @@ afterEach(() => {
 })
 
 async function panelFixture() {
-  const sessions = [mk("s1", { updated: NOW - 60_000, idle: NOW - 60_000 })]
+  const sessions = [
+    mk("s1", { updated: NOW - 60_000, idle: NOW - 60_000 }),
+    mk("s2", { updated: NOW - 120_000, idle: NOW - 120_000 }, { parentID: "s1", title: "Kid work" }), // subagent of s1
+  ]
   const b = panelBackend(sessions)
   const store = new Store(b.backend)
   await store.reload()
@@ -358,6 +368,7 @@ async function panelFixture() {
     permCalls: b.permCalls,
     renames: b.renames,
     interrupts: b.interrupts,
+    viewed: b.viewed,
     pinsToggled,
     canvasCalls,
     closed: () => closedCount,
@@ -550,5 +561,63 @@ describe("SessionPanel", () => {
     input.focus = () => void focused++
     panel["focusInput"]()
     expect(focused).toBe(1)
+  })
+
+  it("the Subagents button lists this session's kids and steers to them", async () => {
+    const { panel } = await panelFixture()
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const subBtn = find(root, (e) => e.className.includes("subagents"))!
+    const pop = () => find(root, (e) => e.className.includes("popover"))
+
+    subBtn.fire("click")
+    const rows = pop()!.children
+    expect(rows).toHaveLength(1) // s2 is s1's kid (parentID in the fixture)
+    expect(textOf(find(rows[0]!, (e) => e.className.includes("pop-label"))!)).toBe("Kid work")
+    const sub = textOf(find(rows[0]!, (e) => e.className.includes("pop-sub"))!)
+    expect(sub.startsWith("subagent")).toBe(true) // no agent set: the fallback label
+    expect(sub.endsWith(timeAgo(NOW - 120_000))).toBe(true) // its updated time, relatively
+
+    rows[0]!.fire("click") // running the kid row steers the panel to it
+    await flush()
+    expect(pop()).toBeUndefined()
+    expect(panel.id).toBe("s2")
+
+    subBtn.fire("click") // s2 has no kids of its own: an empty popover
+    expect(pop()!.children).toHaveLength(0)
+    subBtn.fire("click") // second click toggles it closed
+    expect(pop()).toBeUndefined()
+  })
+
+  it("finishing an execution marks viewed; resize and autosize re-apply geometry", async () => {
+    const { panel, store, viewed } = await panelFixture()
+    const root = panel.el as unknown as FakeEl
+    const input = panel["input"] as unknown as FakeEl
+    const finished = () => panel["transcript"]["onEvent"]({ type: "session.execution.succeeded", data: { sessionID: "s1" } } as any)
+
+    finished() // no session yet: the onFinished guard marks nothing
+    expect(viewed).toEqual([])
+
+    panel.open("s1")
+    await flush()
+    expect(viewed).toEqual(["s1"]) // open() itself counts as reviewed
+
+    // a finish bumps idle -> unseen again; watching it finish converts it to seen
+    store.sessions.get("s1")!.time.idle = Date.now() + 1000
+    finished()
+    expect(viewed).toEqual(["s1", "s1"])
+    finished() // still seen: markViewed dedupes, no second backend call
+    expect(viewed).toEqual(["s1", "s1"])
+
+    // resize recomputes the panel rect against the new viewport
+    ;(globalThis as any).innerHeight = 900
+    ;(globalThis as any).window.fire("resize")
+    expect(root.style.height).toBe(`${900 - 24 - 74}px`)
+
+    // composer autosize: growth caps at 220px
+    input.scrollHeight = 500
+    input.fire("input")
+    expect(input.style.height).toBe("220px")
   })
 })
