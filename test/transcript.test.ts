@@ -18,6 +18,7 @@ class FakeEl {
   children: FakeEl[] = []
   parent: FakeEl | null = null
   handlers: Record<string, Array<() => void>> = {}
+  attrs: Record<string, string> = {}
   scrollTop = 0
   scrollHeight = 0
   clientHeight = 0
@@ -101,6 +102,10 @@ class FakeEl {
     return node
   }
 
+  setAttribute(k: string, v: string) {
+    this.attrs[k] = v
+  }
+
   addEventListener(type: string, fn: () => void) {
     ;(this.handlers[type] ??= []).push(fn)
   }
@@ -151,6 +156,7 @@ beforeEach(() => {
       n.textContent = t
       return n
     },
+    body: new FakeEl("body"), // toast() hosts here on a COLD cache (isolation runs)
   }
   rafQueue = []
   ;(globalThis as any).requestAnimationFrame = (cb: () => void) => {
