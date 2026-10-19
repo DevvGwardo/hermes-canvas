@@ -4,6 +4,18 @@
 export type SpinnerStyle = "wave" | "matrix" | "braid" | "mist" | "comet"
 export const SPINNERS: SpinnerStyle[] = ["wave", "matrix", "braid", "mist", "comet"]
 
+/** Does the user ask for reduced motion? Checked live (the OS setting can flip
+ *  mid-session) and guarded, because some runtimes have no matchMedia at all.
+ *  styles.css only disables CSS animations — these are canvas-drawn, so the
+ *  loop itself has to honour the preference. */
+export function reducedMotion(): boolean {
+  try {
+    return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches
+  } catch {
+    return false
+  }
+}
+
 const ACCENT = [70, 211, 126] as const
 const rgba = (a: number) => `rgba(${ACCENT[0]},${ACCENT[1]},${ACCENT[2]},${Math.max(0, Math.min(1, a)).toFixed(3)})`
 
@@ -25,6 +37,12 @@ export function spinner(size = 14, extraClass = "", fixed?: SpinnerStyle): HTMLC
   c.className = `spin ${extraClass}`.trim()
   c.setAttribute("aria-hidden", "true")
   if (fixed) c.dataset.style = fixed
+  // Reduced motion: paint one resting frame and stay out of the rAF loop — a
+  // continuously redrawing canvas can't be switched off from CSS.
+  if (reducedMotion()) {
+    paint(c, fixed ?? style, 0)
+    return c
+  }
   live.add(c)
   if (!running) {
     running = true
@@ -125,27 +143,43 @@ const draw: Record<SpinnerStyle, Draw> = {
   },
 }
 
-let last = 0
-function loop(now: number) {
-  if (!live.size) {
-    running = false
-    return
-  }
-  requestAnimationFrame(loop)
-  if (now - last < 1000 / 40) return
-  last = now
-  const t = now / 1000
+/** One canvas, one frame: transform reset, clear, draw at time `t`. */
+function paint(c: HTMLCanvasElement, s: SpinnerStyle, t: number) {
+  const g = c.getContext("2d")
+  if (!g) return
+  const size = c.width
+  g.setTransform(1, 0, 0, 1, 0, 0)
+  g.clearRect(0, 0, size, size)
+  draw[s](g, t, size)
+}
+
+/** Every visible spinner on one frame; disconnected canvases get pruned. */
+function paintLive(t: number) {
   for (const c of live) {
     if (!c.isConnected) {
       live.delete(c)
       continue
     }
     if (!c.offsetParent || c.closest(".culled")) continue
-    const g = c.getContext("2d")
-    if (!g) continue
-    const s = c.width
-    g.setTransform(1, 0, 0, 1, 0, 0)
-    g.clearRect(0, 0, s, s)
-    draw[(c.dataset.style as SpinnerStyle | undefined) ?? style](g, t, s)
+    paint(c, (c.dataset.style as SpinnerStyle | undefined) ?? style, t)
   }
+}
+
+let last = 0
+function loop(now: number) {
+  if (!live.size) {
+    running = false
+    return
+  }
+  // The preference flipped on mid-session: settle every spinner on its resting
+  // frame and stop scheduling. The next spinner() call restarts the loop.
+  if (reducedMotion()) {
+    paintLive(0)
+    running = false
+    return
+  }
+  requestAnimationFrame(loop)
+  if (now - last < 1000 / 40) return
+  last = now
+  paintLive(now / 1000)
 }
