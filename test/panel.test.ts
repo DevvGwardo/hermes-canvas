@@ -233,6 +233,7 @@ function panelBackend(sessions: Session[]) {
   const prompts: Array<{ id: string; text?: string; delivery?: string }> = []
   const permCalls: Array<{ id: string; rules: unknown }> = []
   const renames: Array<{ id: string; title: string }> = []
+  const interrupts: string[] = []
   let failPrompt = false
   let failPerms = false
   const backend = {
@@ -248,7 +249,9 @@ function panelBackend(sessions: Session[]) {
       if (failPrompt) throw new Error("nope")
       prompts.push({ id, ...msg })
     },
-    interrupt: async () => {},
+    interrupt: async (id: string) => {
+      interrupts.push(id)
+    },
     replyPermission: async () => {},
     replyForm: async () => {},
     cancelForm: async () => {},
@@ -267,6 +270,7 @@ function panelBackend(sessions: Session[]) {
     prompts,
     permCalls,
     renames,
+    interrupts,
     setFailPrompt: (f: boolean) => void (failPrompt = f),
     setFailPerms: (f: boolean) => void (failPerms = f),
   }
@@ -336,11 +340,30 @@ async function panelFixture() {
   const store = new Store(b.backend)
   await store.reload()
   const host = new FakeEl("div")
-  const canvas = { setOpen: (_id?: string) => {}, cardRect: () => null }
-  const panel = new SessionPanel(host as any, store, b.backend, canvas as any, () => {})
+  const canvasCalls = { opened: [] as Array<string | undefined>, rect: null as DOMRect | null }
+  const canvas = {
+    setOpen: (id?: string) => void canvasCalls.opened.push(id),
+    cardRect: (_id: string) => canvasCalls.rect,
+  }
+  let closedCount = 0
+  const panel = new SessionPanel(host as any, store, b.backend, canvas as any, () => void closedCount++)
   const pinsToggled: string[] = []
   panel.tiles = { isPinned: () => false, togglePin: (id: string) => void pinsToggled.push(id) }
-  return { panel, store, host, backend: b.backend, prompts: b.prompts, permCalls: b.permCalls, renames: b.renames, pinsToggled, setFailPrompt: b.setFailPrompt, setFailPerms: b.setFailPerms }
+  return {
+    panel,
+    store,
+    host,
+    backend: b.backend,
+    prompts: b.prompts,
+    permCalls: b.permCalls,
+    renames: b.renames,
+    interrupts: b.interrupts,
+    pinsToggled,
+    canvasCalls,
+    closed: () => closedCount,
+    setFailPrompt: b.setFailPrompt,
+    setFailPerms: b.setFailPerms,
+  }
 }
 
 describe("SessionPanel", () => {
@@ -467,5 +490,65 @@ describe("SessionPanel", () => {
     await flush()
     expect(store.sessions.get("s1")!.title).toBe("Blurred name")
     expect(renames).toHaveLength(2)
+  })
+
+  it("close() retires the panel once, after its exit timer, and hands the canvas back", async () => {
+    const { panel, host, canvasCalls, closed } = await panelFixture()
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const scrim = host.children[0]! // host = [scrim, el]
+    expect(canvasCalls.opened).toEqual(["s1"])
+    expect(scrim.className).toContain("visible") // open() showed it
+
+    panel.close()
+    expect(panel.isOpen).toBe(false) // the closing flag flips immediately
+    expect(root.className).toContain("leaving")
+    expect(scrim.className).not.toContain("visible")
+    expect(closed()).toBe(0) // but nothing retires before the exit timer
+    panel.close() // a second close while closing is a no-op
+    jest.advanceTimersByTime(120)
+    expect(closed()).toBe(1) // exactly one retirement
+    expect(panel.id).toBeUndefined()
+    expect(root.className).not.toContain("visible")
+    expect(root.className).not.toContain("leaving")
+    expect(root.className).not.toContain("animating") // exit cleanup clears them all
+    expect(canvasCalls.opened).toStrictEqual(["s1", undefined]) // strict: toEqual ignores undefined elements
+    expect(panel["transcript"].messages).toEqual([]) // session detached
+
+    // The card-rect branch follows the card out and waits 380ms, not 120.
+    canvasCalls.rect = new DOMRect(10, 20, 300, 400)
+    panel.open("s1")
+    await flush()
+    panel.close()
+    expect(root.style.left).toBe("10px") // snapped to the card's rect
+    jest.advanceTimersByTime(120)
+    expect(closed()).toBe(1) // still waiting on the longer exit
+    jest.advanceTimersByTime(260)
+    expect(closed()).toBe(2)
+    panel.close() // nothing open now
+    jest.advanceTimersByTime(500)
+    expect(closed()).toBe(2) // no further retirement
+    canvasCalls.rect = null
+  })
+
+  it("the Stop button interrupts the open session; focusInput focuses the composer", async () => {
+    const { panel, interrupts } = await panelFixture()
+    await panel["interrupt"]() // no session yet: early return
+    expect(interrupts).toEqual([])
+
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const stopBtn = find(root, (e) => e.className.includes("stop"))!
+    stopBtn.fire("click")
+    await flush()
+    expect(interrupts).toEqual(["s1"])
+
+    const input = panel["input"] as unknown as FakeEl
+    let focused = 0
+    input.focus = () => void focused++
+    panel["focusInput"]()
+    expect(focused).toBe(1)
   })
 })
