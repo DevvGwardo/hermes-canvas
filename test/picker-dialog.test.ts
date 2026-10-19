@@ -189,11 +189,15 @@ const FOLDERS: Record<string, string[]> = {
 
 async function pickerFixture() {
   const sessions = [mk("s1", `${HOME}/alpha`, "p1", 1_000), mk("s2", `${HOME}/alpha`, "p1", 60_000), mk("s3", `${HOME}/beta`, "p3", 120_000)]
+  let failFolders = false
   const backend = {
     listProjects: async () => [],
     listSessions: async () => sessions,
     active: async () => new Set<string>(),
-    listFolders: async (dir: string) => FOLDERS[dir] ?? [],
+    listFolders: async (dir: string) => {
+      if (failFolders) throw new Error("listing down")
+      return FOLDERS[dir] ?? []
+    },
     listModels: async () => [],
     serverDefaultModel: async () => undefined,
   } as unknown as Backend
@@ -220,7 +224,7 @@ async function pickerFixture() {
     input().fire("keydown", { key: k, shiftKey: false, ...extra })
     await flush()
   }
-  return { picker, store, host, picks, scrim, input, list, foot, modelBtn, autoBox, rows, type, key }
+  return { picker, store, host, picks, scrim, input, list, foot, modelBtn, autoBox, rows, type, key, setFailFolders: (f: boolean) => { failFolders = f } }
 }
 
 describe("picker dialog — shell", () => {
@@ -363,6 +367,18 @@ describe("picker dialog — where mode, folder autocomplete", () => {
     expect(picker.isOpen).toBe(false)
     expect(picks).toEqual([{ directory: `${HOME}/code`, model: undefined, auto: false }])
     expect(input().value).not.toBe("~/code/") // did NOT complete into it
+  })
+
+  it("a failing folder listing degrades to the Start-in option alone", async () => {
+    const { picker, rows, type, setFailFolders } = await pickerFixture()
+    picker.open()
+    await flush()
+    setFailFolders(true)
+    await type("~/co")
+    const rs = rows()
+    expect(rs.length).toBe(1) // no names to offer...
+    expect(rs[0]!.className).toContain("path")
+    expect(textOf(rs[0]!)).toContain("No folder here yet") // ...but the typed path can still start there
   })
 })
 

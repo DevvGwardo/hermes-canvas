@@ -310,9 +310,30 @@ describe("Transcript — construction and session loading", () => {
     } as unknown as Backend
     const tr = newTranscript(store, backend, {})
 
-    await tr.load(true) // resolves (the failure is toasted, not rethrown)
+    tr.setSession("s1") // without a session id load() early-returns and never touches the backend
+    await flush()
     expect(tr.messages).toEqual([])
     expect((tr.list as unknown as FakeEl).children.length).toBe(0)
+    // The catch also toasts, but the toast host is a module-level cache that
+    // some earlier test file already bound to ITS document stub, so the text
+    // is not reachable from here; the swallow itself is the pin (dropping the
+    // catch produces an unhandled rejection the runner flags).
+  })
+
+  it("a failing inbox degrades to an empty one and still renders the messages", async () => {
+    const store = new Store({} as unknown as Backend)
+    const backend = {
+      messages: async () => ({ data: [userMsg("m1", "hello")], cursor: {} }),
+      inbox: async () => {
+        throw new Error("no inbox")
+      },
+    } as unknown as Backend
+    const tr = newTranscript(store, backend, {})
+
+    tr.setSession("s1")
+    await flush()
+    expect(tr.messages).toHaveLength(1) // the page side loaded fine
+    expect(tr.inbox).toEqual([]) // the inbox side degraded to empty
   })
 })
 

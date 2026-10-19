@@ -464,6 +464,21 @@ describe("TilesView — open/close and membership", () => {
     expect(tiles.has("s5")).toBe(false)
   })
 
+  it("corrupt pins or an unwritable store never break the view", async () => {
+    ls.set("occ.tiles.pins", "{corrupt") // load() falls back on a parse error
+    const { view, tiles } = await viewFixture()
+    view.open()
+    await flush()
+    expect(view["pins"]).toEqual(new Set())
+
+    ;(globalThis as any).localStorage.setItem = () => {
+      throw new Error("quota") // private mode / full disk
+    }
+    view.togglePin("s5") // save() swallows it
+    await flush()
+    expect(tiles.has("s5")).toBe(true) // the pin still applied in memory
+  })
+
   it("a watched session lingers as review only until it is viewed elsewhere", async () => {
     const ctx = await viewFixture()
     const { view, store, tiles } = ctx
