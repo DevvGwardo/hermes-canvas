@@ -41,6 +41,7 @@ class FakeEl {
   checked = false
   rows = 0
   spellcheck = false
+  contentEditable = ""
   style = new FakeStyle()
   dataset: Record<string, string> = {}
   attrs: Record<string, string> = {}
@@ -147,7 +148,13 @@ class FakeEl {
     ;(this.handlers[type] ??= []).push(fn)
   }
 
-  removeEventListener() {}
+  removeEventListener(type: string, fn?: (e: any) => void) {
+    if (!fn) {
+      delete this.handlers[type]
+      return
+    }
+    this.handlers[type] = (this.handlers[type] ?? []).filter((h) => h !== fn)
+  }
 
   fire(type: string, extra: Record<string, any> = {}) {
     const ev = { preventDefault() {}, stopPropagation() {}, target: this, ...extra }
@@ -202,6 +209,13 @@ const flush = async () => {
   for (let i = 0; i < 8; i++) await Promise.resolve()
 }
 
+/** Aggregate text a render test can assert on (textContent + children). */
+function textOf(el: FakeEl): string {
+  let s = el.textContent
+  for (const c of el.children) s += textOf(c)
+  return s
+}
+
 const NOW = Date.now()
 const mk = (id: string, time: Record<string, number>, over: Record<string, any> = {}): Session =>
   ({
@@ -218,6 +232,7 @@ const mk = (id: string, time: Record<string, number>, over: Record<string, any> 
 function panelBackend(sessions: Session[]) {
   const prompts: Array<{ id: string; text?: string; delivery?: string }> = []
   const permCalls: Array<{ id: string; rules: unknown }> = []
+  const renames: Array<{ id: string; title: string }> = []
   let failPrompt = false
   let failPerms = false
   const backend = {
@@ -243,21 +258,27 @@ function panelBackend(sessions: Session[]) {
       if (failPerms) throw new Error("denied")
       permCalls.push({ id, rules })
     },
+    rename: async (id: string, title: string) => {
+      renames.push({ id, title })
+    },
   }
   return {
     backend: backend as unknown as Backend,
     prompts,
     permCalls,
+    renames,
     setFailPrompt: (f: boolean) => void (failPrompt = f),
     setFailPerms: (f: boolean) => void (failPerms = f),
   }
 }
 
 let saved: Record<string, unknown> = {}
+let clips: string[] = []
 
 beforeEach(() => {
   jest.useFakeTimers() // keeps open()'s stray focus/cleanup timeouts inert
-  for (const k of ["document", "window", "localStorage", "requestAnimationFrame", "matchMedia", "DOMRect", "innerWidth", "innerHeight"])
+  clips = []
+  for (const k of ["document", "window", "localStorage", "requestAnimationFrame", "matchMedia", "DOMRect", "innerWidth", "innerHeight", "navigator"])
     saved[k] = (globalThis as any)[k]
   ;(globalThis as any).document = {
     createElement: (tag: string) => new FakeEl(tag),
@@ -269,6 +290,7 @@ beforeEach(() => {
     body: new FakeEl("body"), // toast() hosts lazily if this file is first
     documentElement: new FakeEl("html"),
     activeElement: null,
+    getSelection: () => ({ selectAllChildren: () => {} }),
   }
   ;(globalThis as any).window = { devicePixelRatio: 1, addEventListener: () => {} }
   ;(globalThis as any).localStorage = {
@@ -293,6 +315,14 @@ beforeEach(() => {
   }
   ;(globalThis as any).innerWidth = 1280
   ;(globalThis as any).innerHeight = 800
+  ;(globalThis as any).navigator = {
+    clipboard: {
+      writeText: (t: string) => {
+        clips.push(t)
+        return Promise.resolve()
+      },
+    },
+  }
 })
 
 afterEach(() => {
@@ -308,7 +338,9 @@ async function panelFixture() {
   const host = new FakeEl("div")
   const canvas = { setOpen: (_id?: string) => {}, cardRect: () => null }
   const panel = new SessionPanel(host as any, store, b.backend, canvas as any, () => {})
-  return { panel, store, host, backend: b.backend, prompts: b.prompts, permCalls: b.permCalls, setFailPrompt: b.setFailPrompt, setFailPerms: b.setFailPerms }
+  const pinsToggled: string[] = []
+  panel.tiles = { isPinned: () => false, togglePin: (id: string) => void pinsToggled.push(id) }
+  return { panel, store, host, backend: b.backend, prompts: b.prompts, permCalls: b.permCalls, renames: b.renames, pinsToggled, setFailPrompt: b.setFailPrompt, setFailPerms: b.setFailPerms }
 }
 
 describe("SessionPanel", () => {
@@ -352,5 +384,88 @@ describe("SessionPanel", () => {
     await panel["setAuto"]("s1", true)
     expect(store.sessionAutoApproves("s1")).toBe(true) // contrast: success really flips it
     expect(panel.isOpen).toBe(true)
+  })
+
+  it("the session menu lists its actions, runs them, and toggles itself", async () => {
+    const { panel, store, pinsToggled } = await panelFixture()
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const menuBtn = find(root, (e) => e.attrs["aria-label"] === "Session menu")!
+    const pop = () => find(root, (e) => e.className.includes("popover"))
+    const labels = (p: FakeEl) => p.children.map((b) => textOf(find(b, (e) => e.className.includes("pop-label"))!))
+
+    menuBtn.fire("click")
+    expect(labels(pop()!)).toEqual([
+      "Auto-approve this session",
+      "Pin to Tiles",
+      "Copy resume command",
+      "Copy session ID",
+      "Rename",
+    ])
+
+    pop()!.children[1]!.fire("click") // Pin to Tiles -> wired to the tiles hook
+    expect(pinsToggled).toEqual(["s1"])
+    expect(pop()).toBeUndefined() // an item click closes the popover
+
+    menuBtn.fire("click") // reopen
+    expect(pop()).toBeDefined()
+    menuBtn.fire("click") // second click toggles it closed
+    expect(pop()).toBeUndefined()
+
+    menuBtn.fire("click")
+    pop()!.children[0]!.fire("click") // Auto-approve this session
+    await flush()
+    expect(store.sessionAutoApproves("s1")).toBe(true)
+    expect(find(root, (e) => e.className.includes("auto-badge"))!.hidden).toBe(false)
+  })
+
+  it("copy items write the resume command to the clipboard", async () => {
+    const { panel } = await panelFixture()
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const menuBtn = find(root, (e) => e.attrs["aria-label"] === "Session menu")!
+    menuBtn.fire("click")
+    const pop = find(root, (e) => e.className.includes("popover"))!
+    pop.children[2]!.fire("click") // Copy resume command
+    await flush()
+    expect(clips).toEqual(["hermes chat --resume s1"])
+  })
+
+  it("rename commits on Enter or blur and aborts on Escape", async () => {
+    const { panel, store, renames } = await panelFixture()
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const menuBtn = find(root, (e) => e.attrs["aria-label"] === "Session menu")!
+    const titleEl = find(root, (e) => e.className === "panel-title")!
+    const beginRename = () => {
+      menuBtn.fire("click")
+      find(root, (e) => e.className.includes("popover"))!.children.at(-1)!.fire("click") // Rename
+    }
+
+    beginRename()
+    expect(titleEl.contentEditable).toBe("plaintext-only") // editing armed
+    titleEl.textContent = "junk"
+    titleEl.fire("keydown", { key: "Escape" })
+    expect(titleEl.contentEditable).toBe("false")
+    expect(store.sessions.get("s1")!.title).toBeUndefined() // aborted: nothing written
+    expect(renames).toEqual([])
+
+    beginRename()
+    titleEl.textContent = "New name"
+    titleEl.fire("keydown", { key: "Enter" })
+    await flush()
+    expect(store.sessions.get("s1")!.title).toBe("New name") // committed locally
+    expect(titleEl.contentEditable).toBe("false")
+    expect(renames).toEqual([{ id: "s1", title: "New name" }]) // and sent
+
+    beginRename()
+    titleEl.textContent = "Blurred name"
+    titleEl.fire("blur") // focus loss commits too
+    await flush()
+    expect(store.sessions.get("s1")!.title).toBe("Blurred name")
+    expect(renames).toHaveLength(2)
   })
 })
