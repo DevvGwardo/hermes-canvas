@@ -590,6 +590,66 @@ describe("TilesView — store card events", () => {
   })
 })
 
+describe("TilesView — remaining interaction seams", () => {
+  // T38: the last uncovered tiles branches - button click wiring, composer
+  // autosize, idempotent pin(), and the openOnCanvas handoff.
+
+  it("tile button clicks stop propagation and run their action", async () => {
+    const ctx = await viewFixture()
+    const { view, tiles } = ctx
+    view.open()
+    await flush()
+    const maxBtn = btnBy(tiles, "s1", "Maximize")
+    let stopped = 0
+    maxBtn.fire("click", { stopPropagation: () => stopped++ })
+    expect(stopped).toBe(1) // the click must not reach the card behind the button
+    expect(view.maximized).toBe("s1")
+    maxBtn.fire("click", { stopPropagation: () => stopped++ })
+    expect(stopped).toBe(2)
+    expect(view.maximized).toBeUndefined() // and it toggles back off
+  })
+
+  it("the composer autosizes its height, capped at 120px", async () => {
+    const ctx = await viewFixture()
+    const { view, tiles } = ctx
+    view.open()
+    await flush()
+    const input = inputOf(tiles, "s1")
+    input.scrollHeight = 40
+    input.fire("input")
+    expect(input.style.height).toBe("40px")
+    input.scrollHeight = 500
+    input.fire("input")
+    expect(input.style.height).toBe("120px") // never grows past the cap
+  })
+
+  it("pin() pins once and never toggles back", async () => {
+    const ctx = await viewFixture()
+    const { view, tiles } = ctx
+    view.open()
+    await flush()
+    expect(tiles.has("s5")).toBe(false)
+    view.pin("s5")
+    await flush()
+    expect(tiles.has("s5")).toBe(true)
+    view.pin("s5") // second call is a no-op, not an unpin
+    await flush()
+    expect(tiles.has("s5")).toBe(true)
+    expect(JSON.parse(ls.get("occ.tiles.pins")!)).toEqual(["s5"])
+  })
+
+  it("openOnCanvas hands the session back and closes the tiles view", async () => {
+    const ctx = await viewFixture()
+    const { view, handlerCalls } = ctx
+    view.open()
+    await flush()
+    expect(view.isOpen).toBe(true)
+    view.openOnCanvas("s2")
+    expect(view.isOpen).toBe(false)
+    expect(handlerCalls.openOnCanvas).toEqual(["s2"])
+  })
+})
+
 describe("Tile — chrome and composer", () => {
   it("status labels and affordances follow the store status", async () => {
     const ctx = await viewFixture()
