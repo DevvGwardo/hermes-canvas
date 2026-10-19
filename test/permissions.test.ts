@@ -106,3 +106,68 @@ describe("permissions", () => {
     expect(store.status("a")).not.toBe("needs-you")
   })
 })
+
+// ---- T40: the branches no test fired - permission.replied's local filter +
+// server confirm, and the form/question cases that resync the ask lists.
+
+describe("permissions — replied confirm and form resync", () => {
+  test("permission.replied filters locally and re-confirms against the server", async () => {
+    const { store, req, ask } = setup()
+    const reply = (data: Record<string, unknown>) => (store as any).onEvent({ id: "e", type: "permission.replied", data })
+
+    ask(req("per_1", "c")) // c is a child of b, so touchParent reaches the parent
+    expect(store.pendingPermissionCount()).toBe(1)
+
+    // The server still reports the ask: the confirm path brings it back.
+    Object.assign(store.backend, { permissions: async () => [req("per_1", "c")], forms: async () => [] })
+    reply({ sessionID: "c", requestID: "per_1" }) // the requestID arm of the id ?? requestID filter
+    expect(store.pendingPermissionCount()).toBe(0) // the local filter runs synchronously...
+    await tick()
+    expect(store.pendingPermissionCount()).toBe(1) // ...then the server confirm wins: still pending
+    expect(store["dirtyCards"].has("b")).toBe(true) // touchParent(id) marks the parent card
+
+    // Server says it is gone: the filtered list stays empty (the id arm).
+    Object.assign(store.backend, { permissions: async () => [] })
+    reply({ sessionID: "c", id: "per_1" })
+    expect(store.pendingPermissionCount()).toBe(0) // the id arm filtered it locally
+    await tick()
+    expect(store.pendingPermissionCount()).toBe(0)
+
+    reply({}) // no sessionID: the guard skips the whole branch
+    await tick()
+    expect(store.pendingPermissionCount()).toBe(0)
+  })
+
+  test("form and question events resync the ask lists and touch the parent", async () => {
+    const { store } = setup()
+    Object.assign(store.backend, {
+      permissions: async () => [],
+      forms: async () => [{ id: "f1", sessionID: "c" }],
+    })
+    const fire = (type: string, data: Record<string, unknown> = { sessionID: "c" }) =>
+      (store as any).onEvent({ id: "e", type, data })
+
+    // Every label of the shared case body re-confirms against the server.
+    for (const type of [
+      "form.created",
+      "question.asked",
+      "form.replied",
+      "form.cancelled",
+      "question.replied",
+      "question.rejected",
+    ]) {
+      fire(type)
+      await tick()
+      expect(store["forms"].get("c")).toHaveLength(1)
+      expect(store["dirtyCards"].has("b")).toBe(true) // the parent card is marked for re-render
+    }
+
+    Object.assign(store.backend, { forms: async () => [] })
+    fire("form.cancelled")
+    await tick()
+    expect(store["forms"].has("c")).toBe(false) // an empty server list deletes the entry (setList)
+
+    fire("form.created", {}) // no sessionID: no resync happens
+    expect(store["forms"].size).toBe(0)
+  })
+})
