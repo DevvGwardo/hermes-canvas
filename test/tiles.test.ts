@@ -517,6 +517,79 @@ describe("TilesView — open/close and membership", () => {
   })
 })
 
+describe("TilesView — store card events", () => {
+  // T36: the store.on cards listener (tiles.ts 312-326). Drive the
+  // registered listener directly: the flush batching is store-side and
+  // covered there, while the store's pending real timers would otherwise
+  // contaminate a fake-timer advance.
+  const fireCards = (store: Store, ...ids: string[]) => {
+    for (const l of store["listeners"]) l.cards?.(new Set(ids))
+  }
+
+  it("a closed view ignores card events entirely", async () => {
+    const { view, store, tiles, grid } = await viewFixture()
+    fireCards(store, "s1") // never opened
+    await flush()
+    expect(view.isOpen).toBe(false)
+    expect(tiles.size).toBe(0)
+    expect(grid.children.length).toBe(0)
+  })
+
+  it("content touches refresh the tile chrome and counts without a re-sync", async () => {
+    const ctx = await viewFixture()
+    const { view, store, tiles, grid } = ctx
+    view.open()
+    await flush()
+    const before = tileOf(tiles, "s1")
+    const updates: string[] = []
+    before.update = () => updates.push("s1") // spy on the chrome refresh
+    let syncs = 0
+    let counts = 0
+    const origSync = view["sync"]
+    const origCounts = view["renderCounts"]
+    view["sync"] = (...a: any[]) => {
+      syncs++
+      return (origSync as any).apply(view, a)
+    }
+    view["renderCounts"] = (...a: any[]) => {
+      counts++
+      return (origCounts as any).apply(view, a)
+    }
+
+    fireCards(store, "s1")
+    await flush()
+    expect(updates).toEqual(["s1"]) // touched branch: chrome refreshed...
+    expect(syncs).toBe(0) // ...but no structural re-sync...
+    expect(counts).toBe(1) // ...just the header counts
+    expect(tiles.get("s1")).toBe(before) // same tile instance, grid untouched
+    expect(grid.children.length).toBe(4)
+  })
+
+  it("membership flips route through a full re-sync", async () => {
+    const ctx = await viewFixture()
+    const { view, store, tiles, grid } = ctx
+    view.open()
+    await flush()
+    expect(tiles.has("s4")).toBe(true)
+
+    await finish(ctx, "s4") // review linger: still wanted while unseen
+    expect(tiles.has("s4")).toBe(true)
+
+    store.markViewed("s4") // read elsewhere -> no longer wanted, tile lingers stale
+    fireCards(store, "s4")
+    await flush()
+    expect(tiles.has("s4")).toBe(false) // membership mismatch: full re-sync drops it
+    expect(grid.children.length).toBe(3)
+
+    // Gain the other way: unseen again (seenHere survives), wanted on re-eval.
+    store.sessions.get("s4")!.time.viewed = undefined
+    fireCards(store, "s4")
+    await flush()
+    expect(tiles.has("s4")).toBe(true)
+    expect(grid.children.length).toBe(4)
+  })
+})
+
 describe("Tile — chrome and composer", () => {
   it("status labels and affordances follow the store status", async () => {
     const ctx = await viewFixture()
