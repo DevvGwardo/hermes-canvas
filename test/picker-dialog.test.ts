@@ -8,10 +8,13 @@ import type { Session } from "../src/app/types"
 // and folder lists, the typed-folder existence guard, choice + keyboard
 // flow. The option builders themselves are covered by test/picker.test.ts
 // (T25); this file drives them through the real DOM wiring. The model-mode
-// LIST stays out on purpose: models()/serverDefault() cache at module level
-// with no reset seam (T26, needs a human call), so its content depends on
-// whichever test file warmed the cache first. Everything asserted here is
-// cache-agnostic; choose()'s model branch is driven by injecting options.
+// list BUILDING is asserted in picker.test.ts (modelOptions describe, T26):
+// those expectations derive from the shared models()/serverDefault()
+// cache promises, so they hold whichever file warmed them. What stays out
+// here is the dialog-level render of model rows plus the sort/def-absent
+// branches, which need a cache-reset seam (T43, human call). Everything
+// asserted here is cache-agnostic; choose()'s model branch is driven by
+// injecting options.
 
 class FakeEl {
   tag: string

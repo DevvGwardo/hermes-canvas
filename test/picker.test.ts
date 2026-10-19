@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test"
-import type { Backend } from "../src/app/backend"
+import type { Backend, ModelOption } from "../src/app/backend"
+import { models, serverDefault } from "../src/app/models"
 import { NewSessionPicker } from "../src/app/picker"
 import { Store } from "../src/app/store"
 import type { Session } from "../src/app/types"
@@ -187,6 +188,110 @@ describe("NewSessionPicker — folderOptions (path mode)", () => {
     await opts("~/cod") // same parent
     await opts("~/code/") // exact dir listed too
     expect(folderCalls.filter((d) => d === "/home/t")).toHaveLength(1) // one fetch per directory
+  })
+})
+
+describe("NewSessionPicker — modelOptions (model mode)", () => {
+  // models()/serverDefault() cache at MODULE level (models.ts `cache ??=`), so
+  // the list a picker sees is whichever cache the process already holds. These
+  // tests never hardcode it: they read the same shared promises the picker
+  // reads and derive every expectation from them. If the cache is cold their
+  // own fixture backend warms it; if warm, the fixture is ignored and the
+  // shared content is used. Either way the assertions are order-independent.
+  const MODELS: ModelOption[] = [
+    { id: "a1", providerID: "alpha", name: "Alpha One" },
+    { id: "b2", providerID: "beta", name: "Beta Two" },
+  ]
+  const DEF: ModelOption = { id: "d0", providerID: "delta", name: "Delta Default" }
+
+  function modelBackend() {
+    return {
+      kind: "demo",
+      listProjects: async () => [],
+      listSessions: async () => [],
+      active: async () => new Set<string>(),
+      listFolders: async () => [],
+      listModels: async () => MODELS, // only reached when nothing warmed the cache yet
+      serverDefaultModel: async () => DEF,
+    } as unknown as Backend
+  }
+
+  async function pickerWithModels() {
+    const backend = modelBackend()
+    const store = new Store(backend)
+    await store.reload()
+    const { p } = newPicker(backend, store)
+    return p
+  }
+
+  const rowFor = (m: ModelOption) => ({
+    kind: "model",
+    label: m.name,
+    sub: `${m.providerID}/${m.id}`,
+    model: { id: m.id, providerID: m.providerID },
+    current: false,
+  })
+
+  // refresh() renders, so the two tests that drive it need document.createElement.
+  let savedDoc: unknown
+  beforeEach(() => {
+    savedDoc = (globalThis as any).document
+    ;(globalThis as any).document = {
+      createElement: () => ({
+        className: "",
+        textContent: "",
+        children: [] as any[],
+        append(...n: any[]) { this.children.push(...n) },
+        replaceChildren(...n: any[]) { this.children = n },
+        setAttribute() {},
+        addEventListener() {},
+        scrollIntoView() {},
+      }),
+    }
+  })
+  afterEach(() => {
+    ;(globalThis as any).document = savedDoc
+  })
+
+  it("lists the Hermes-default row first, then one row per cached model", async () => {
+    const p = await pickerWithModels()
+    p["model"] = undefined // no remembered choice: the server default is current
+    const known = await models(modelBackend()) // the shared cache, whatever it holds
+    const def = await serverDefault(modelBackend())
+    const rows = (await p["modelOptions"]("", 0)) as any[]
+    expect(rows[0]!.kind).toBe("server-default")
+    expect(rows[0]!.label).toBe("Hermes default")
+    expect(rows[0]!.sub).toBe(
+      def ? `${def.name} · ${def.providerID}/${def.id} (from your Hermes config)` : "Whatever your Hermes config picks",
+    )
+    expect(rows[0]!.current).toBe(true)
+    expect(rows.slice(1)).toEqual(known.map(rowFor))
+  })
+
+  it("a query nothing matches filters every row; model mode says so", async () => {
+    const p = await pickerWithModels()
+    p["model"] = undefined
+    p["mode"] = "model"
+    const list = { children: [] as any[], append(...n: any[]) { this.children.push(...n) }, replaceChildren(...n: any[]) { this.children = n } }
+    p["list"] = list as any
+    p["input"] = { value: "zzz-no-such-model" } as any
+    await p["refresh"]()
+    expect(list.children[0]!.className).toContain("picker-empty")
+    expect(list.children[0]!.textContent).toBe("No matching models")
+  })
+
+  it("entering model mode with an empty query highlights the current choice", async () => {
+    const p = await pickerWithModels()
+    const known = await models(modelBackend())
+    p["model"] = known[0] ? { id: known[0].id, providerID: known[0].providerID } : undefined
+    p["mode"] = "model"
+    const list = { children: [] as any[], append(...n: any[]) { this.children.push(...n) }, replaceChildren(...n: any[]) { this.children = n } }
+    p["list"] = list as any
+    p["input"] = { value: "" } as any
+    await p["refresh"]()
+    // The current model's row sits under the server-default row; with an empty
+    // cache the server-default row itself is the current one at index 0.
+    expect(p["active"]).toBe(known.length ? 1 : 0)
   })
 })
 
