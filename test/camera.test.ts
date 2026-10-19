@@ -76,4 +76,101 @@ describe("camera", () => {
     const z = c.fitZoom({ x: 0, y: 0, w: 4000, h: 1000 }, 50, 1)
     expect(4000 * z).toBeLessThanOrEqual(1000 - 100 + 1e-6)
   })
+
+  // ---- T32: the render-mapping and input-state gaps -------------------------
+})
+
+describe("camera — screen mapping and visibility", () => {
+  test("toScreen inverts toWorld and centres the current view", () => {
+    const c = cam() // centre (1000, 500), z=1, viewport 1000x800
+    expect(c.toScreen(1000, 500)).toEqual({ x: 500, y: 400 })
+    expect(c.toScreen(1100, 550)).toEqual({ x: 600, y: 450 })
+    const p = c.toWorld(123, 456)
+    expect(c.toScreen(p.x, p.y)).toEqual({ x: 123, y: 456 }) // exact round trip
+  })
+
+  test("transform names translate3d + scale and matches the state", () => {
+    const c = cam()
+    expect(c.transform()).toBe("translate3d(-500px, -100px, 0) scale(1)")
+    c.jumpTo(1000, 500, 2)
+    // z is exp(log(2)) so parse instead of comparing the string to floats.
+    const parts = c
+      .transform()
+      .match(/^translate3d\((-?[\d.]+)px, (-?[\d.]+)px, 0\) scale\((-?[\d.]+)\)$/)!
+      .slice(1)
+      .map(Number)
+    expect(parts[0]).toBeCloseTo(-1500) // 1000/2 - cx*z
+    expect(parts[1]).toBeCloseTo(-600) // 800/2 - cy*z
+    expect(parts[2]).toBeCloseTo(2)
+  })
+
+  test("visibleWorld covers the viewport, expanded by the margin", () => {
+    const c = cam() // z=1
+    expect(c.visibleWorld()).toEqual({ x: 500, y: 100, w: 1000, h: 800 })
+    expect(c.visibleWorld(50)).toEqual({ x: 450, y: 50, w: 1100, h: 900 })
+    c.jumpTo(1000, 500, 2) // z=2 halves the visible world
+    const r = c.visibleWorld()
+    expect(r.x).toBeCloseTo(750)
+    expect(r.y).toBeCloseTo(300)
+    expect(r.w).toBeCloseTo(500)
+    expect(r.h).toBeCloseTo(400)
+    expect(c.fitZoom({ x: 0, y: 0, w: 1e6, h: 1e6 })).toBe(c.minZoom) // never below minZoom
+  })
+})
+
+describe("camera — moving, hold and fit", () => {
+  test("onChange fires once per programmatic move, not for setters", () => {
+    let n = 0
+    const c = new Camera(() => n++)
+    c.setViewport(1000, 800)
+    c.setBounds({ x: 0, y: 0, w: 2000, h: 1000 })
+    expect(n).toBe(0) // setup does not invalidate
+    c.panBy(10, 0)
+    c.zoomAt(2, 500, 400)
+    c.jumpTo(1000, 500, 1)
+    c.animateTo(1000, 500, 1)
+    expect(n).toBe(4)
+  })
+
+  test("moving is false at rest and true while held, flung or out of range", () => {
+    const c = cam()
+    c["lastInput"] = -Infinity // pretend the last input was long ago
+    expect(c.moving).toBe(false) // fresh, centred, no velocity, not outside
+    c.hold()
+    expect(c.moving).toBe(true) // holding
+    c.release(300, 0)
+    expect(c.moving).toBe(true) // velocity over the threshold
+
+    const flung = cam()
+    flung.jumpTo(4000, 500, 1) // past the right edge; jumpTo does not touch lastInput
+    expect(flung.moving).toBe(true) // outside() keeps the camera awake
+
+    const zoomedOut = cam()
+    zoomedOut.jumpTo(1000, 500, 0.001) // log zoom far below minZoom
+    expect(zoomedOut.moving).toBe(true) // out-of-range zoom also counts
+  })
+
+  test("hold freezes the view and kills momentum", () => {
+    const c = cam()
+    c.release(300, 0)
+    expect(c.step(1 / 10)).toBe(true) // the fling advances the centre
+    const x = c.cx
+    c.hold()
+    expect(c.step(1 / 10)).toBe(true) // still active while held...
+    expect(c.cx).toBe(x) // ...but nothing moves (momentum zeroed)
+  })
+
+  test("fit animates by default and jumps when animate=false", () => {
+    const target = { x: 0, y: 0, w: 400, h: 200 }
+    const jumpy = cam()
+    jumpy.fit(target, 64, 1, false)
+    expect(jumpy.cx).toBeCloseTo(200)
+    expect(jumpy.cy).toBeCloseTo(100)
+    expect(jumpy.z).toBe(1) // fitZoom capped at maxZoom
+
+    const tweened = cam()
+    tweened.fit(target, 64, 1) // animate defaults true
+    expect(tweened.cx).toBe(1000) // untouched until the first step...
+    expect(tweened.moving).toBe(true) // ...and the tween keeps it awake
+  })
 })
