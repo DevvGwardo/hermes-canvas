@@ -272,3 +272,72 @@ describe("lastAssistantText", () => {
     expect(lastAssistantText([])).toBe("")
   })
 })
+
+// ---- T33: markdown blocks the original describe never reached. ----
+
+describe("markdown — the untested blocks", () => {
+  test("hr variants, nested blockquote content and capped heading levels", () => {
+    expect(renderMarkdown("---")).toBe("<hr>")
+    expect(renderMarkdown("- - -")).toBe("<hr>")
+    expect(renderMarkdown("***")).toBe("<hr>")
+    expect(renderMarkdown("*_*")).not.toContain("<hr>") // mixed markers do not match (backreference)
+    expect(renderMarkdown("> **bold**\n> - item")).toBe(
+      "<blockquote><p><strong>bold</strong></p><ul><li>item</li></ul></blockquote>",
+    )
+    expect(renderMarkdown(">quote")).toBe("<blockquote><p>quote</p></blockquote>") // bare > strips too
+    expect(renderMarkdown("#### four")).toBe("<h6>four</h6>") // 4+2 = 6
+    expect(renderMarkdown("##### five")).toBe("<h6>five</h6>") // 5+2 capped
+    expect(renderMarkdown("###### six")).toBe("<h6>six</h6>") // 6+2 capped
+  })
+
+  test("ordered and plus bullets, task checkboxes and nested markers", () => {
+    expect(renderMarkdown("1. one\n2) two")).toBe("<ol><li>one</li><li>two</li></ol>")
+    expect(renderMarkdown("+ plus")).toBe("<ul><li>plus</li></ul>")
+    expect(renderMarkdown("- [ ] todo\n- [x] done\n- [X] caps")).toBe(
+      '<ul><li><span class="task "></span>todo</li><li><span class="task done"></span>done</li><li><span class="task done"></span>caps</li></ul>',
+    )
+    // Nesting is a flat marker, not a nested list.
+    expect(renderMarkdown("- outer\n  - inner")).toBe("<ul><li>outer</li><li class=\"nested\">inner</li></ul>")
+  })
+
+  test("an indented continuation line joins the previous item", () => {
+    expect(renderMarkdown("- first\n  continued\n- second")).toBe("<ul><li>first continued</li><li>second</li></ul>")
+  })
+
+  test("fences carry data-lang when named; bare and tilde fences do not", () => {
+    expect(renderMarkdown("```ts\nconst a = 1\n```")).toBe('<pre><code data-lang="ts">const a = 1</code></pre>')
+    expect(renderMarkdown("```\nplain\n```")).toBe("<pre><code>plain</code></pre>")
+    expect(renderMarkdown("~~~js\nconst b = 2\n~~~")).toBe('<pre><code data-lang="js">const b = 2</code></pre>')
+    expect(renderMarkdown("```objective-c\nint x;\n```")).toBe('<pre><code data-lang="objective-c">int x;</code></pre>')
+  })
+
+  test("underscore strong, em, del, autolinks and code-span protection", () => {
+    expect(renderMarkdown("__big__")).toBe("<p><strong>big</strong></p>")
+    expect(renderMarkdown("say *hi* now")).toBe("<p>say <em>hi</em> now</p>")
+    expect(renderMarkdown("~~gone~~")).toBe("<p><del>gone</del></p>")
+    expect(renderMarkdown("see https://x.dev/docs now")).toBe(
+      '<p>see <a href="https://x.dev/docs" target="_blank" rel="noreferrer noopener">https://x.dev/docs</a> now</p>',
+    )
+    // Code spans become placeholders before autolinking: no link inside <code>.
+    expect(renderMarkdown("`https://x.dev`")).toBe("<p><code>https://x.dev</code></p>")
+  })
+
+  test("a lone pipe line falls through to a paragraph, not a broken table", () => {
+    expect(renderMarkdown("| just cells")).toBe("<p>| just cells</p>") // no trailing pipe: plain prose
+    expect(renderMarkdown("text\n| a | b |")).toBe("<p>text</p><p>| a | b |</p>") // trailing pipe, no separator row
+  })
+
+  test("CRLF input renders the same as LF", () => {
+    expect(renderMarkdown("# T\r\n\r\n- a\r\n")).toBe(renderMarkdown("# T\n\n- a\n"))
+  })
+
+  test("preview strips fences and markers, keeps the last three bullets", () => {
+    expect(previewBlocks("```ts\ncode\n```\n# Heading\nAfter `x` and [a](https://b.dev) # H")).toEqual({
+      // ^#+ strips only at line start; a mid-line # is kept as plain text.
+      text: "Heading After x and a # H",
+      bullets: [],
+    })
+    expect(previewBlocks("- [ ] todo\n- [x] done")).toEqual({ text: "", bullets: ["todo", "done"] })
+    expect(previewBlocks("- a\n- b\n- c\n- d\n- e")).toEqual({ text: "", bullets: ["c", "d", "e"] })
+  })
+})
