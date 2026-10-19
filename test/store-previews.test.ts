@@ -9,6 +9,8 @@ import type { Message, OcEvent, Session } from "../src/app/types"
 // event-driven refresh that streams fire when a turn ends - plus title()'s
 // fallback chain, which consumes preview data. A controllable fake backend
 // holds every messages() promise so inflight limits and ordering are exact.
+// The same fixture drives start()'s connection state machine: a failed
+// reconnect resync is swallowed and still lands live.
 
 const flush = async () => {
   for (let i = 0; i < 6; i++) await Promise.resolve()
@@ -30,10 +32,15 @@ function fakeBackend() {
   const calls: string[] = []
   const pending: Array<{ id: string; resolve: (v: unknown) => void; reject: (e: unknown) => void }> = []
   let onEvent: ((ev: OcEvent) => void) | undefined
+  let notifyState: ((s: ConnectionState) => void) | undefined
+  let failList = false
   const backend = {
     kind: "live" as const,
     listProjects: async () => [],
-    listSessions: async () => [],
+    listSessions: async () => {
+      if (failList) throw new Error("server down")
+      return []
+    },
     active: async () => new Set<string>(),
     inbox: async () => [],
     permissions: async () => [],
@@ -61,6 +68,7 @@ function fakeBackend() {
     cancelForm: async () => {},
     subscribe(onEv: (ev: OcEvent) => void, onState: (s: ConnectionState) => void) {
       onEvent = onEv
+      notifyState = onState
       onState("live")
       return () => {
         onEvent = undefined
@@ -72,6 +80,10 @@ function fakeBackend() {
     calls,
     pending,
     emit: (ev: OcEvent) => onEvent?.(ev),
+    setState: (s: ConnectionState) => notifyState?.(s),
+    setFailList: (f: boolean) => {
+      failList = f
+    },
   }
 }
 
@@ -196,4 +208,15 @@ test("session.text.ended refreshes the preview once per burst, then clears stale
   } finally {
     jest.useRealTimers()
   }
+})
+
+test("a failed resync after a reconnect still lands live", async () => {
+  await store.start() // healthy: the initial load succeeds
+  fx.setFailList(true) // the server drops while we are disconnected
+  fx.setState("reconnecting")
+  expect(store.connection).toBe("reconnecting")
+  fx.setState("live") // wasReconnecting -> the resync reload is fired and swallowed
+  await flush()
+  expect(store.connection).toBe("live") // the failed resync did not wedge the state
+  expect(store.sessions.size).toBe(0) // and the store was left as it was
 })

@@ -31,6 +31,7 @@ function backendWith(sessions: Session[] = [sess("s1")]) {
   let perms: PermissionRequest[] = []
   let forms: FormInfo[] = []
   let failPerms = false
+  let failReply = new Set<string>()
   const replies: Array<{ sessionID: string; requestID: string; decision: string }> = []
   const backend = {
     listProjects: async () => [],
@@ -45,6 +46,7 @@ function backendWith(sessions: Session[] = [sess("s1")]) {
     },
     forms: async () => forms,
     replyPermission: async (sessionID: string, requestID: string, decision: string) => {
+      if (failReply.has(requestID)) throw new Error("reply down")
       replies.push({ sessionID, requestID, decision })
     },
   }
@@ -65,6 +67,9 @@ function backendWith(sessions: Session[] = [sess("s1")]) {
     },
     setFailPerms: (f: boolean) => {
       failPerms = f
+    },
+    setFailReply: (ids: string[]) => {
+      failReply = new Set(ids)
     },
   }
 }
@@ -191,5 +196,27 @@ describe("Store — syncAsks prompt reconcile", () => {
     await syncAsks(store, "sub1")
     await flush()
     expect(replies.map((r) => r.requestID)).toEqual(["p3"])
+  })
+
+  it("a failing auto-approve keeps its prompt pending and never wedges the guard", async () => {
+    const { store, setPerms, replies, setFailReply } = await loadedStore([sess("s1", { permissions: [ALLOW_ALL] })])
+    const onAutoApproved = jest.fn()
+    store.onAutoApproved = onAutoApproved
+    setPerms([req("p1"), req("p2")])
+    setFailReply(["p2"]) // the server rejects just this one reply
+    await syncAsks(store, "s1")
+    await flush() // both approves are fire-and-forget; p2's rejection is swallowed
+    expect(replies.map((r) => r.requestID)).toEqual(["p1"]) // p1 went through
+    expect(store.permissions.get("s1")!.map((p) => p.id)).toEqual(["p2"]) // only the failed one is still pending
+    expect(onAutoApproved).toHaveBeenCalledTimes(1) // the notice fires only after a real reply
+    expect(onAutoApproved).toHaveBeenCalledWith(req("p1"))
+
+    setFailReply([]) // the server comes back
+    setPerms([req("p2")]) // p1 was answered; the server now reports only p2
+    await syncAsks(store, "s1")
+    await flush()
+    expect(replies.map((r) => r.requestID)).toEqual(["p1", "p2"]) // the finally cleanup let the retry through
+    expect(store.permissions.has("s1")).toBe(false)
+    expect(onAutoApproved).toHaveBeenCalledTimes(2)
   })
 })

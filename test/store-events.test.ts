@@ -8,7 +8,9 @@ import type { Session } from "../src/app/types"
 // renamed branches, deletion, liveText accumulation and inbox staging.
 // permissions.test.ts owns permission.asked and store-previews owns the
 // preview pump + text.ended; no file fired these session branches at all
-// (coverage's nine listed ranges were only a sample of the gap).
+// (coverage's nine listed ranges were only a sample of the gap). It also
+// pins the two getSession swallows: a failed refetch never loses the
+// record already in the map.
 
 const flush = async () => {
   for (let i = 0; i < 6; i++) await Promise.resolve()
@@ -28,7 +30,8 @@ const record = (id: string, title = "seeded"): Session =>
   }) as unknown as Session
 
 function fakeBackend() {
-  return {
+  let failGet = false
+  const backend = {
     kind: "live" as const,
     listProjects: async () => [],
     listSessions: async () => [],
@@ -37,7 +40,10 @@ function fakeBackend() {
     permissions: async () => [],
     forms: async () => [],
     messages: async () => ({ data: [], cursor: {} }),
-    getSession: async (id: string) => record(id, `refetched ${id}`),
+    getSession: async (id: string) => {
+      if (failGet) throw new Error("refetch down")
+      return record(id, `refetched ${id}`)
+    },
     createSession: async () => {
       throw new Error("unused")
     },
@@ -57,14 +63,17 @@ function fakeBackend() {
     cancelForm: async () => {},
     subscribe: (..._args: unknown[]) => () => {},
   } as unknown as Backend
+  return { backend, setFailGet: (f: boolean) => { failGet = f } }
 }
 
 let store: Store
+let fx: ReturnType<typeof fakeBackend>
 const fire = (type: string, data: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
   (store as any).onEvent({ id: "e", type, data, ...extra })
 
 beforeEach(() => {
-  store = new Store(fakeBackend())
+  fx = fakeBackend()
+  store = new Store(fx.backend)
 })
 
 afterEach(() => {
@@ -226,5 +235,22 @@ describe("Store — the session event switch", () => {
     expect(store.previews.get("s1")).toEqual({ text: "", bullets: [], pendingUser: "q?" })
     fire("session.inbox.enqueued", { sessionID: "s1", item: { type: "notice" } })
     expect(store.previews.get("s1")!.pendingUser).toBe("q?") // non-user items never stage a question
+  })
+
+  test("a failed created-refetch keeps the event-built stub instead of losing the session", async () => {
+    fx.setFailGet(true)
+    fire("session.created", { sessionID: "p1", title: "parent" }, { created: 5 })
+    expect(store.sessions.get("p1")!.title).toBe("parent") // the stub stands while inflight
+    await flush() // the refetch rejects; the catch swallows it
+    expect(store.sessions.get("p1")!.title).toBe("parent")
+    expect(store.sessions.size).toBe(1)
+  })
+
+  test("a failed moved refetch keeps the previous record", async () => {
+    store.addSessions([record("s1", "original")])
+    fx.setFailGet(true)
+    fire("session.moved", { sessionID: "s1" })
+    await flush() // the catch swallows it
+    expect(store.sessions.get("s1")!.title).toBe("original")
   })
 })

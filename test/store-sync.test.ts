@@ -25,13 +25,21 @@ const sess = (id: string, over: Record<string, any> = {}): Session =>
 function backendWith(initial: Session[], projects: Array<{ id: string; name?: string; canonical: string }> = [{ id: "p1", name: "hermes", canonical: "/home/t/a" }]) {
   let list = initial
   let fail = false
+  let failProjects = false
+  let failActive = false
   const backend = {
-    listProjects: async () => projects,
+    listProjects: async () => {
+      if (failProjects) throw new Error("server down")
+      return projects
+    },
     listSessions: async () => {
       if (fail) throw new Error("server down")
       return list
     },
-    active: async () => new Set<string>(),
+    active: async () => {
+      if (failActive) throw new Error("server down")
+      return new Set<string>()
+    },
   }
   return {
     backend: backend as unknown as Backend,
@@ -40,6 +48,12 @@ function backendWith(initial: Session[], projects: Array<{ id: string; name?: st
     },
     setFail: (f: boolean) => {
       fail = f
+    },
+    setFailProjects: (f: boolean) => {
+      failProjects = f
+    },
+    setFailActive: (f: boolean) => {
+      failActive = f
     },
   }
 }
@@ -127,6 +141,19 @@ describe("Store — refreshRecent reconciliation", () => {
     setFail(true)
     await refresh(store) // resolves, does not throw
     expect(store.sessions.get("s1")).toBe(s1)
+  })
+})
+
+describe("Store — reload's best-effort fetches", () => {
+  it("loads the sessions even when projects or active fail", async () => {
+    const b = backendWith([sess("s1")])
+    b.setFailProjects(true)
+    b.setFailActive(true)
+    const store = new Store(b.backend)
+    await store.reload() // both side fetches degrade to empty; listSessions is the required one
+    expect([...store.sessions.keys()]).toEqual(["s1"])
+    expect(store.projects.size).toBe(0)
+    expect(store.running.size).toBe(0)
   })
 })
 
