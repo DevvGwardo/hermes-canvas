@@ -43,6 +43,7 @@ class FakeEl {
   rows = 0
   spellcheck = false
   contentEditable = ""
+  src = ""
   style = new FakeStyle()
   dataset: Record<string, string> = {}
   attrs: Record<string, string> = {}
@@ -287,7 +288,7 @@ let clips: string[] = []
 beforeEach(() => {
   jest.useFakeTimers() // keeps open()'s stray focus/cleanup timeouts inert
   clips = []
-  for (const k of ["document", "window", "localStorage", "requestAnimationFrame", "matchMedia", "DOMRect", "innerWidth", "innerHeight", "navigator"])
+  for (const k of ["document", "window", "localStorage", "requestAnimationFrame", "matchMedia", "DOMRect", "innerWidth", "innerHeight", "navigator", "FileReader"])
     saved[k] = (globalThis as any)[k]
   ;(globalThis as any).document = {
     createElement: (tag: string) => new FakeEl(tag),
@@ -333,6 +334,15 @@ beforeEach(() => {
         return Promise.resolve()
       },
     },
+  }
+  // src assigns onload BEFORE readAsDataURL, so a synchronous stub is faithful
+  ;(globalThis as any).FileReader = class {
+    onload: (() => void) | null = null
+    result: string | null = null
+    readAsDataURL(f: { type: string }) {
+      this.result = `data:${f.type};base64,AAAA`
+      this.onload?.()
+    }
   }
 })
 
@@ -619,5 +629,61 @@ describe("SessionPanel", () => {
     input.scrollHeight = 500
     input.fire("input")
     expect(input.style.height).toBe("220px")
+  })
+
+  it("pasting an image attaches a removable chip; text pastes are ignored", async () => {
+    const { panel } = await panelFixture()
+    panel.open("s1")
+    await flush()
+    const input = panel["input"] as unknown as FakeEl
+    const attachRow = panel["attachRow"] as unknown as FakeEl
+    const chips = () => attachRow.children
+
+    let prevented = 0
+    input.fire("paste", {
+      clipboardData: { files: [{ type: "text/plain", name: "notes.txt" }] },
+      preventDefault: () => void prevented++,
+    })
+    expect(chips()).toHaveLength(0) // non-images are ignored...
+    expect(prevented).toBe(0) // ...without swallowing the paste
+
+    input.fire("paste", {
+      clipboardData: { files: [{ type: "image/png", name: "shot.png" }] },
+      preventDefault: () => void prevented++,
+    })
+    expect(prevented).toBe(1)
+    expect(chips()).toHaveLength(1)
+    const chip = chips()[0]!
+    expect(chip.className).toContain("attach-chip")
+    expect(find(chip, (e) => e.tag === "img")!.src).toBe("data:image/png;base64,AAAA")
+    expect(textOf(chip)).toContain("shot.png")
+
+    find(chip, (e) => e.className === "x")!.fire("click") // the x detaches it
+    expect(chips()).toHaveLength(0)
+
+    input.fire("paste", {
+      clipboardData: { files: [{ type: "image/jpeg", name: "" }] },
+      preventDefault: () => void prevented++,
+    })
+    expect(textOf(chips()[0]!)).toContain("image.png") // nameless paste falls back
+  })
+
+  it("dropping an image onto the panel attaches it; dragover is claimed", async () => {
+    const { panel } = await panelFixture()
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const attachRow = panel["attachRow"] as unknown as FakeEl
+
+    let claimed = 0
+    root.fire("dragover", { preventDefault: () => void claimed++ })
+    expect(claimed).toBe(1) // the panel claims the drag
+
+    root.fire("drop", { dataTransfer: { files: [{ type: "image/png", name: "drop.png" }] } })
+    expect(attachRow.children).toHaveLength(1)
+    expect(textOf(attachRow.children[0]!)).toContain("drop.png")
+
+    root.fire("drop", { dataTransfer: { files: [{ type: "application/pdf", name: "doc.pdf" }] } })
+    expect(attachRow.children).toHaveLength(1) // non-image drops add nothing
   })
 })
