@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
+import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { makeHermesHome } from "./helpers"
 import { startServer } from "../src/server/server"
@@ -213,5 +214,95 @@ describe("hermes api", () => {
   test("rejects non-loopback Host headers (DNS rebinding)", async () => {
     const res = await fetch(`${base}/api/hermes/session`, { headers: { host: "attacker.example" } })
     expect(res.status).toBe(403)
+  })
+})
+
+// ---- T37: the route error paths and the approve endpoints. ----
+
+describe("hermes api — error paths and approve routes", () => {
+  test("fs/list answers 400 for a path that is not a directory", async () => {
+    const r = await fetch(`${base}/api/hermes/fs/list?path=${encodeURIComponent(join(home, "config.yaml"))}`)
+    expect(r.status).toBe(400)
+    expect((await j(r)).message).toBe("not a directory")
+  })
+
+  test("approve all flips session yolo state; the GET reply is static", async () => {
+    const post = (body: Record<string, boolean>) =>
+      fetch(`${base}/api/hermes/approve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    const yolo = async () => (await j(await fetch(`${base}/api/hermes/yolo?session=whatever`))).yolo
+
+    expect(await j(await post({ all: true }))).toEqual({ ok: true, all: true })
+    expect(await yolo()).toBe(true) // setAutoApproveAll reached sessionYoloState
+    expect(await j(await post({ all: false }))).toEqual({ ok: true, all: false })
+    expect(await yolo()).toBe(false) // reset: no leakage into later tests
+    expect(await j(await fetch(`${base}/api/hermes/approve`))).toEqual({ all: false }) // GET never reports state
+  })
+
+  test("unknown api paths are 404", async () => {
+    const r = await fetch(`${base}/api/hermes/nope`)
+    expect(r.status).toBe(404)
+    expect(await r.text()).toBe("Not found")
+  })
+
+  test("a corrupt database answers 500 with the sqlite message", async () => {
+    const saved = process.env.HERMES_CANVAS_DB!
+    const junk = join(home, "junk.db")
+    writeFileSync(junk, "this is not a database")
+    process.env.HERMES_CANVAS_DB = junk
+    try {
+      const r = await fetch(`${base}/api/hermes/session?limit=5`)
+      expect(r.status).toBe(500)
+      const msg = (await j(r)).message
+      expect(typeof msg).toBe("string")
+      expect(msg.length).toBeGreaterThan(0)
+    } finally {
+      process.env.HERMES_CANVAS_DB = saved
+    }
+  })
+
+  test("boot reports a broken db on config and in the non-quiet banner", async () => {
+    const saved = process.env.HERMES_CANVAS_DB!
+    const junk = join(home, "boot-junk.db")
+    writeFileSync(junk, "still not a database")
+    process.env.HERMES_CANVAS_DB = junk
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (...a: unknown[]) => void logs.push(a.join(" "))
+    let boot: Awaited<ReturnType<typeof startServer>> | undefined
+    try {
+      boot = await startServer({ port: 0, hostname: "127.0.0.1", demo: false, dev: false, quiet: false })
+      const cfg = await j(await fetch(`http://127.0.0.1:${boot.server.port}/canvas/config`))
+      expect(cfg.connected).toBe(false)
+      expect(typeof cfg.error).toBe("string")
+      expect(cfg.error!.length).toBeGreaterThan(0)
+      expect(logs.join("\n")).toContain("unavailable")
+    } finally {
+      console.log = origLog
+      boot?.stop()
+      process.env.HERMES_CANVAS_DB = saved
+    }
+  })
+
+  test("the non-quiet banner names the live db and the demo mode", async () => {
+    const logs: string[] = []
+    const origLog = console.log
+    console.log = (...a: unknown[]) => void logs.push(a.join(" "))
+    let live: Awaited<ReturnType<typeof startServer>> | undefined
+    let demo: Awaited<ReturnType<typeof startServer>> | undefined
+    try {
+      live = await startServer({ port: 0, hostname: "127.0.0.1", demo: false, dev: false, quiet: false })
+      demo = await startServer({ port: 0, hostname: "127.0.0.1", demo: true, dev: false, quiet: false })
+      const all = logs.join("\n")
+      expect(all).toContain(process.env.HERMES_CANVAS_DB!) // live banner names the db
+      expect(all).toContain("simulated sessions (demo)")
+    } finally {
+      console.log = origLog
+      live?.stop()
+      demo?.stop()
+    }
   })
 })
