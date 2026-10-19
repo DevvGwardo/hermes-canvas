@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, jest, test } from "bun:test"
 import { autoApprovedNotices, autoApproveToggle } from "../src/app/approve"
+import { toast } from "../src/app/toast"
 
 // approve.ts carries the safety interlock around `--yolo` (README: "turning it
 // on takes a confirming second click") and coalesces auto-approval notices into
@@ -276,4 +277,14 @@ test("a second burst after the window opens its own toast", () => {
     "Auto-approved Read /etc/hosts (storefront)",
     "Auto-approved Read /etc/passwd (storefront)",
   ])
+})
+
+test("a toast fades itself out when its window expires", () => {
+  toast("deployed", 500)
+  const t = body.children[0].children.at(-1)!
+  expect(t.classList.contains("in")).toBe(true) // the rAF stub paints it synchronously
+  jest.advanceTimersByTime(499)
+  expect(t.classList.contains("in")).toBe(true) // still on screen just before its window
+  jest.advanceTimersByTime(1)
+  expect(t.classList.contains("in")).toBe(false) // the expiry timer removes the enter class
 })

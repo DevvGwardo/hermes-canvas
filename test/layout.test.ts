@@ -78,4 +78,15 @@ describe("layouts", () => {
     expect(r.labels[0].text).toMatch(/results?$/)
     for (const [, p] of hits) expect(p.x % (CARD_W + 14)).toBe(0)
   })
+
+  test("search without a previous layout fades misses from a fresh card", () => {
+    const r = layout("tree", gs, { query: (id) => id.endsWith("s1") })
+    const miss = r.cards.get("g0s0")! // a miss with nowhere to fade from
+    expect(miss.opacity).toBe(0)
+    expect(miss.scale).toBe(0.9) // a fresh fade card, not prev.scale * 0.92
+    expect(miss.interactive).toBe(false)
+    expect(miss.z).toBe(0)
+    expect(miss.x).toBe(0)
+    expect(miss.y).toBe(0)
+  })
 })

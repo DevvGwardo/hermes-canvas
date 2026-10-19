@@ -455,4 +455,24 @@ describe("subscribe (fake EventSource)", () => {
       jest.useRealTimers()
     }
   })
+
+  test("a successful open resets the backoff before the next failure", () => {
+    jest.useFakeTimers()
+    try {
+      esLog.length = 0
+      const unsub = backend.subscribe(() => {}, () => {})
+      esLog[0].onopen!() // initial open: already at the base delay
+      esLog[0].onerror!() // schedules at 500, retry doubles to 1000
+      jest.advanceTimersByTime(500)
+      expect(esLog).toHaveLength(2)
+
+      esLog[1].onopen!() // the stream came up: backoff returns to the base
+      esLog[1].onerror!() // schedules at 500 again - NOT at 1000
+      jest.advanceTimersByTime(500)
+      expect(esLog).toHaveLength(3) // would still be 2 if the open never reset retry
+      unsub()
+    } finally {
+      jest.useRealTimers()
+    }
+  })
 })

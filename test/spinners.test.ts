@@ -223,3 +223,23 @@ describe("reduced motion toggled mid-session", () => {
     expect(frozen.ops.length).toBe(frozenOps) // it never did
   })
 })
+
+describe("disconnected canvases and loop shutdown", () => {
+  test("prunes every dead canvas, stops scheduling when none remain, restarts on demand", () => {
+    // Every canvas still registered from the describes above dies at once.
+    for (const c of canvases) c.isConnected = false
+
+    const frozenOps = canvases.map((c) => c.ops.length)
+    const scheduled = raf.length
+    raf[raf.length - 1](10_000) // reschedules first, then paintLive prunes the dead set
+    expect(raf.length).toBe(scheduled + 1)
+    expect(canvases.map((c) => c.ops.length)).toEqual(frozenOps) // pruned before paint: nothing drew
+
+    raf[raf.length - 1](10_030) // next tick: live is empty now
+    expect(raf.length).toBe(scheduled + 1) // stopped without scheduling another frame
+
+    const before = raf.length
+    spinner(13) // running was cleared by the guard, so this starts a fresh loop
+    expect(raf.length).toBe(before + 1)
+  })
+})
