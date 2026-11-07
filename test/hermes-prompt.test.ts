@@ -81,4 +81,28 @@ describe("startPrompt stream branches", () => {
     for (let i = 0; i < 50 && runningSessionIDs().has("ses_new_1"); i++) await Bun.sleep(50)
     process.env.HERMES_FAKE_MODE = "fast"
   })
+
+  test("a throwing emit kills the prompt and finishes failed (pump catch)", async () => {
+    process.env.HERMES_FAKE_MODE = "fast"
+    const events: CanvasEvent[] = []
+    let emits = 0
+    await startPrompt("ses_new_1", "hello", {
+      emit: (ev) => {
+        emits++
+        if (emits === 2) throw new Error("emit blew up") // 1st is execution.started; 2nd is the first pump emit
+        events.push(ev)
+      },
+    })
+    for (let i = 0; i < 100; i++) {
+      if (events.some((e) => e.type === "session.execution.failed")) break
+      await Bun.sleep(50)
+    }
+    for (let i = 0; i < 50 && runningSessionIDs().has("ses_new_1"); i++) await Bun.sleep(50)
+    const types = events.map((e) => e.type)
+    expect(types).toContain("session.execution.failed") // catch finishes failed
+    expect(types).not.toContain("session.execution.succeeded")
+    expect(types).not.toContain("session.text.delta") // died before any delta
+    expect(runningSessionIDs().has("ses_new_1")).toBe(false) // running cleared
+    process.env.HERMES_FAKE_MODE = "fast"
+  })
 })

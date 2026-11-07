@@ -58,7 +58,16 @@ interface ChatLauncher {
   env?: Record<string, string>
 }
 
-let chatLauncher: Promise<ChatLauncher> | undefined
+// The probe result is cached, but the cache key tracks the envs that drive
+// the probe (bin/python/site/home/PATH). Changing any of them (tests with
+// different fakes, or a runtime env fix) re-probes instead of serving a
+// stale launcher. Prod rarely changes env mid-process, so this also fixes
+// the stale-after-fix staleness without a test-only reset seam.
+let chatLauncher: { key: string; promise: Promise<ChatLauncher> } | undefined
+
+function launcherCacheKey(): string {
+  return [process.env.HERMES_BIN, process.env.HERMES_PYTHON, process.env.HERMES_SITE_PACKAGES, process.env.HERMES_HOME, process.env.PATH ?? ""].join("\n")
+}
 
 /**
  * `hermes` on PATH can be broken for model work: the Hermes-managed Python
@@ -70,7 +79,9 @@ let chatLauncher: Promise<ChatLauncher> | undefined
  */
 function resolveChatLauncher(): Promise<ChatLauncher> {
   if (process.env.HERMES_BIN) return Promise.resolve({ argv: hermesArgv() })
-  chatLauncher ??= (async (): Promise<ChatLauncher> => {
+  const key = launcherCacheKey()
+  if (!chatLauncher || chatLauncher.key !== key) {
+    chatLauncher = { key, promise: (async (): Promise<ChatLauncher> => {
     const plain: ChatLauncher = { argv: ["hermes"] }
     try {
       const { Glob } = await import("bun")
@@ -109,8 +120,9 @@ function resolveChatLauncher(): Promise<ChatLauncher> {
     } catch {
       return plain
     }
-  })()
-  return chatLauncher
+    })() }
+  }
+  return chatLauncher.promise
 }
 
 async function runRaw(cmd: string[], timeoutMs: number, env?: Record<string, string>) {
