@@ -647,7 +647,7 @@ export function createSessionRow(directory: string, model?: string, title?: stri
       `INSERT INTO sessions (id, source, model, title, cwd, started_at, message_count, tool_call_count,
         input_tokens, output_tokens, archived, created_source)
        VALUES (?, 'canvas', ?, ?, ?, ?, 0, 0, 0, 0, 0, 'canvas')`,
-    ).run(id, model ?? "", title ?? "New canvas session", directory || null, started)
+    ).run(id, model ?? "", title ?? null, directory || null, started)
   } finally {
     db.close()
   }

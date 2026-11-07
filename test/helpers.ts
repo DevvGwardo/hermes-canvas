@@ -17,6 +17,7 @@ export function makeHermesHome(): string {
       title TEXT, archived INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0,
       tool_call_count INTEGER DEFAULT 0, created_source TEXT
     );
+    CREATE UNIQUE INDEX idx_sessions_title_unique ON sessions(title) WHERE title IS NOT NULL;
     CREATE TABLE messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT,
       tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL,

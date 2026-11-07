@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import { homedir } from "node:os"
-import { hermesHome, mapMessages, mapSession, parseModel, prettyToolText, projectIDFor, projectNameFor, sessionDir } from "../src/server/hermes"
+import { createSessionRow, hermesHome, mapMessages, mapSession, parseModel, prettyToolText, projectIDFor, projectNameFor, sessionDir } from "../src/server/hermes"
+import { makeHermesHome } from "./helpers"
 
 describe("hermes row mapping", () => {
   test("splits provider/model and maps tokens, cost, project", () => {
@@ -197,5 +198,20 @@ describe("hermesHome", () => {
       if (savedLa !== undefined) process.env.LOCALAPPDATA = savedLa
       else delete process.env.LOCALAPPDATA
     }
+  })
+})
+
+describe("createSessionRow", () => {
+  test("untitled canvas sessions do not collide on the unique title index", () => {
+    makeHermesHome()
+    const a = createSessionRow("/repo/a")
+    const b = createSessionRow("/repo/b")
+    expect(a.id).not.toBe(b.id)
+    // The Hermes schema has `CREATE UNIQUE INDEX ... ON sessions(title)
+    // WHERE title IS NOT NULL`; a shared default title made the second
+    // canvas session a 500. New sessions stay untitled (the UI shows
+    // "New session") so the partial index ignores them.
+    expect(a.title).toBeUndefined()
+    expect(b.title).toBeUndefined()
   })
 })
