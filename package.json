@@ -23,7 +23,7 @@
     "dev": "bun --hot bin/hermes-canvas --dev",
     "demo": "bun bin/hermes-canvas --demo",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test --isolate"
   },
   "engines": {
     "bun": ">=1.2.0"

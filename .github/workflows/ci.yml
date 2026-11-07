@@ -16,4 +16,6 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - run: bun test
+      # Test files stub globals and start timers/loops; isolate gives each file
+      # a fresh context so file order cannot change the result.
+      - run: bun run test
