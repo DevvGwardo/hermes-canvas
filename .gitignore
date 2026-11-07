@@ -8,3 +8,7 @@ dist/
 # Personal scratch page (ranks local Ollama models); not part of the canvas.
 # Untracked in loop(2) — kept on disk, recoverable: git show b44127e:local-models.html
 local-models.html
+
+# Agent loop process notes: local working state, not part of the product.
+.loop/
+LOOP.md
