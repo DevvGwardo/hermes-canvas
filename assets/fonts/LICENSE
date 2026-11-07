@@ -38,14 +38,14 @@ Bundled fonts (from Google Fonts, latin subset, woff2):
 
 Why these fonts?
 ----------------
-The previously bundled faces (Blaze Type Collapse / Rules and Pangram Pangram
-PP Mondwest / PP Neue Bit) are commercial, paid fonts. Their foundry EULAs
+The previously bundled faces are commercial fonts. Their foundry EULAs
 prohibit distributing or uploading the font binaries to a public repository
 (Blaze Type EULA: "sell, rent, sublicense, copy or distribute ... to any Third
 Party"; "shall not allow Third Parties to access the Product ... by offering
-it for download"; Pangram Pangram free-trial EULA §2.6: "Distributing copies
-... Uploading or downloading the Fonts on the internet or making it available
-publicly"). They were removed.
+it for download"; Pangram Pangram EULA §3.7 (commercial) / §2.6 (free):
+"Distributing copies ... Uploading or downloading the Fonts on the internet
+or making it available publicly"). They were removed. See git history for
+the removal commit message, which names the deleted files.
 
 The four OFL families above preserve the design roles:
   --h-font          -> Inter (body/UI)
