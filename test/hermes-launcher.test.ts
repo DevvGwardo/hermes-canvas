@@ -15,12 +15,16 @@ import { type CanvasEvent, runningSessionIDs, startPrompt } from "../src/server/
 // chatLauncher caches on first probe, so this scenario must not share a
 // process with the HERMES_BIN-set prompt tests.
 
+// .cmd shims + ";" PATH separators are Windows-only; CI also runs Linux.
+const win32 = process.platform === "win32"
+
 let tmp: string
 let savedPath: string | undefined
 let savedBin: string | undefined
 let savedPython: string | undefined
 
 beforeAll(() => {
+  if (!win32) return
   savedPath = process.env.PATH
   savedBin = process.env.HERMES_BIN
   savedPython = process.env.HERMES_PYTHON
@@ -49,6 +53,7 @@ beforeAll(() => {
 })
 
 afterAll(() => {
+  if (!win32) return
   if (savedPath === undefined) delete process.env.PATH
   else process.env.PATH = savedPath
   if (savedBin === undefined) delete process.env.HERMES_BIN
@@ -59,7 +64,7 @@ afterAll(() => {
 })
 
 describe("launcher probe (HERMES_BIN unset)", () => {
-  test("selects the managed python when the import check passes", async () => {
+  test.skipIf(!win32)("selects the managed python when the import check passes", async () => {
     const events: CanvasEvent[] = []
     await startPrompt("ses_new_1", "hello launcher", { emit: (ev) => events.push(ev) })
     for (let i = 0; i < 100; i++) {

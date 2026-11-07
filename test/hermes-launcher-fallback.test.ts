@@ -12,12 +12,16 @@ import { type CanvasEvent, runningSessionIDs, startPrompt } from "../src/server/
 // from the managed-selection file. The fake hermes.cmd answers
 // --version with a fake Install dir, and plain chat with plain-chat NDJSON.
 
+// .cmd shims + ";" PATH separators are Windows-only; CI also runs Linux.
+const win32 = process.platform === "win32"
+
 let savedPath: string | undefined
 let savedBin: string | undefined
 let savedPython: string | undefined
 let tmp: string
 
 beforeAll(() => {
+  if (!win32) return
   savedPath = process.env.PATH
   savedBin = process.env.HERMES_BIN
   savedPython = process.env.HERMES_PYTHON
@@ -47,6 +51,7 @@ beforeAll(() => {
 })
 
 afterAll(() => {
+  if (!win32) return
   if (savedPath === undefined) delete process.env.PATH
   else process.env.PATH = savedPath
   if (savedBin === undefined) delete process.env.HERMES_BIN
@@ -57,7 +62,7 @@ afterAll(() => {
 })
 
 describe("launcher fallback (HERMES_BIN unset, all pythons fail)", () => {
-  test("returns plain [hermes] when no managed python checks out", async () => {
+  test.skipIf(!win32)("returns plain [hermes] when no managed python checks out", async () => {
     const events: CanvasEvent[] = []
     await startPrompt("ses_new_1", "hello plain", { emit: (ev) => events.push(ev) })
     for (let i = 0; i < 100; i++) {
