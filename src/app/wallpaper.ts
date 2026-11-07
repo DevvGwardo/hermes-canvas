@@ -1,19 +1,21 @@
-// Canvas wallpaper: hermes-desk dark treatments (sky/haze/blush/linen).
-// Ported from hermes-desk's chat-wallpaper pattern (ids + localStorage
-// persistence), adapted to vanilla TS — no React. The classes (`wall-*`)
-// are painted on `.stage`, BEHIND the GPU-composited `.world` layer, so
-// pan/zoom never repaints them.
+// Canvas wallpaper: Hermes-branded dark treatments (amber/dither/stars/grid/void).
+//
+// The palette comes from the real Hermes design system (@nous-research/ui):
+// warm near-black `--h-bg` #170d02, brand amber `--h-amber` #ffac02, cream
+// `--h-cream` #fff6e5. The classes (`wall-*`) are painted on `.stage`, BEHIND
+// the GPU-composited `.world` layer, so pan/zoom never repaints them.
 
-export const WALLPAPER_IDS = ["sky", "haze", "blush", "linen"] as const;
+export const WALLPAPER_IDS = ["amber", "dither", "stars", "grid", "void"] as const;
 export type WallpaperId = (typeof WALLPAPER_IDS)[number];
 
-export const WALLPAPER_DEFAULT: WallpaperId = "sky";
+export const WALLPAPER_DEFAULT: WallpaperId = "amber";
 
 export const WALLPAPER_LABELS: Record<WallpaperId, string> = {
-  sky: "Sky",
-  haze: "Haze",
-  blush: "Blush",
-  linen: "Linen",
+  amber: "Amber",
+  dither: "Dither",
+  stars: "Stars",
+  grid: "Grid",
+  void: "Void",
 };
 
 /** Persisted under the existing `hermes-canvas.` localStorage prefix. */

@@ -95,11 +95,12 @@ function showUnavailable(root: HTMLElement, cfg: CanvasConfig) {
   pip.src = pipMark
   pip.alt = "Pip, the courier owl"
   pip.className = "empty-pip"
-  pip.width = 112
-  pip.height = 112
+  pip.width = 132
+  pip.height = 132
   pip.draggable = false
   mark.append(pip)
   box.append(
+    el("div", "empty-brand", "Hermes Canvas"),
     mark,
     el("h1", "", "Can't reach Hermes"),
     el(
@@ -125,6 +126,10 @@ function showUnavailable(root: HTMLElement, cfg: CanvasConfig) {
 
 async function boot() {
   const root = document.getElementById("app")!
+  // The splash markup ships in index.html so it paints before this module runs;
+  // re-point its owl at the bundled asset so the path is always right.
+  const bootPip = root.querySelector<HTMLImageElement>(".boot-pip")
+  if (bootPip) bootPip.src = pipMark
   const params = new URLSearchParams(location.search)
   const cfg = await getConfig()
   const demo = params.has("demo") || cfg.mode === "demo"
@@ -215,7 +220,10 @@ async function boot() {
   markImg.draggable = false
   const dot = el("span", "conn-dot")
   const stats = el("span", "stats")
-  brand.append(markImg, dot, el("span", "brand-name", "Hermes"))
+  // Brand lockup: Pip, then the wordmark, then the live connection lamp.
+  const lockup = el("div", "brand-lockup")
+  lockup.append(el("span", "brand-name", "Hermes"), el("span", "brand-sub", "Canvas"))
+  brand.append(markImg, lockup, dot)
 
   // Status counts double as filters: click one to see just those sessions.
   const chips = el("div", "chips")

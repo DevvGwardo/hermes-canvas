@@ -30,7 +30,9 @@ export function createSessionCard(id: string): CardEls {
   root.setAttribute("role", "button")
   // Coloured top edge: the status reads even when zoomed far out.
   const accent = el("div", "card-accent")
-  root.append(accent)
+  // The Hermes arc: an amber stroke that travels the card while it's selected.
+  const arc = el("div", "card-arc")
+  root.append(accent, arc)
   const title = el("div", "card-title")
   const body = el("div", "card-body")
   const text = el("p", "card-text")

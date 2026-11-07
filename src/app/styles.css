@@ -1,66 +1,165 @@
-:root {
-  /* Hermes Desk tokens (ported from hermes-desk desk-tokens.css). Every text
-     colour is opaque; cards keep opaque fills so text never sits on wallpaper
-     glow areas (see the WCAG note in desk-tokens.css). */
-  --desk-surface-0: #0e0e10;
-  --desk-surface-1: #161618;
-  --desk-surface-2: #1c1c1f;
-  --desk-surface-3: #2a2a2e;
-  --desk-surface-4: #3a3a3f;
-  --desk-text-primary: #f2f2f5;
-  --desk-text-secondary: #c4c4ce;
-  --desk-text-tertiary: #adadb9;
-  --desk-hairline: #ffffff14;
-  --desk-hairline-strong: #ffffff26;
-  --desk-control-border: #888894;
-  --desk-accent: #a7ceff;
-  --desk-accent-surface: #253347;
-  --desk-accent-ink: #102239;
-  --desk-success: #a3d9b5;
-  --desk-success-surface: #24352b;
-  --desk-warn: #efc58c;
-  --desk-warn-surface: #3b3022;
-  --desk-danger: #f2a8ad;
-  --desk-danger-surface: #3c272b;
-  --desk-focus-ring: #b8d8ff;
-  --desk-radius-xs: 4px;
-  --desk-radius-sm: 8px;
-  --desk-radius-md: 12px;
-  --desk-radius-lg: 16px;
-  --desk-radius-pill: 999px;
-  --desk-shadow-raised: 0 2px 8px #00000026, 0 0 0 1px #ffffff0a;
-  --desk-shadow-popover: 0 8px 24px #00000066, 0 0 0 1px #ffffff1a;
-  --desk-shadow-modal: 0 24px 64px #00000080, 0 0 0 1px #ffffff26;
-  /* Pip, the courier owl: winged gold petasos. Secondary brand accent. */
-  --pip-gold: #e8b96e;
-  /* Wallpaper glow tints (hermes-desk --ca-* palette). */
-  --ca-brand-tint: #b7d9fe;
-  --ca-pink-soft: #ffe4ef;
+/* ============================================================================
+   HERMES CANVAS — brand layer
+   Palette, type and bevel language come from the real Hermes design system
+   (@nous-research/ui): warm near-black ground #170d02, brand amber #ffac02,
+   cream ink #fff6e5, Collapse / Rules Compressed / Mondwest type, hard 1px
+   bevels instead of soft glass, and the animated arc-border stroke.
+   ========================================================================== */
 
-  /* Canvas theme, re-pointed at the desk tokens. */
-  --bg: var(--desk-surface-0);
-  --card: var(--desk-surface-1);
-  --card-hover: var(--desk-surface-2);
-  --card-border: var(--desk-hairline);
-  --panel: var(--desk-surface-1);
-  --line: var(--desk-hairline-strong);
+@font-face {
+  font-family: "Collapse";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../assets/fonts/Collapse-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Collapse";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../../assets/fonts/Collapse-Bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Rules Compressed";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../assets/fonts/RulesCompressed-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Rules Compressed";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../../assets/fonts/RulesCompressed-Medium.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Rules Expanded";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../../assets/fonts/RulesExpanded-Bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Mondwest";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../assets/fonts/Mondwest-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Neuebit";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../../assets/fonts/Neuebit-Bold.woff2") format("woff2");
+}
+
+:root {
+  /* ---- Hermes brand: ground, ink, accents (mirrors @nous-research/ui) ---- */
+  --h-bg: #170d02;
+  --h-bg-base: #170d02;
+  --h-bg-raised: #1e1204;
+  --h-bg-panel: #241605;
+  --h-bg-inset: #100901;
+  --h-cream: #fff6e5;
+  --h-amber: #ffac02;
+  --h-amber-bright: #ffc63d;
+  --h-amber-deep: #b87c02;
+  --h-amber-ink: #170d02;
+  --h-success: #4ade80;
+  --h-warning: #ffbd38;
+  --h-danger: #fb2c36;
+  --h-hairline: rgba(255, 172, 2, 0.16);
+  --h-hairline-strong: rgba(255, 172, 2, 0.32);
+  --h-hairline-hard: rgba(255, 172, 2, 0.6);
+  --h-wash: rgba(255, 172, 2, 0.07);
+  --h-wash-strong: rgba(255, 172, 2, 0.13);
+  /* The DS bevel: 1px cream inside the top-left, 1px black bottom-right. */
+  --h-bevel: inset 1px 1px 0 0 rgba(255, 246, 229, 0.14), inset -1px -1px 0 0 rgba(0, 0, 0, 0.55);
+  --h-bevel-lit: inset 1px 1px 0 0 rgba(255, 255, 255, 0.55), inset -1px -1px 0 0 rgba(0, 0, 0, 0.5);
+  --h-shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 172, 2, 0.18);
+  --h-shadow-modal: 0 30px 80px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 172, 2, 0.28);
+  --h-glow-amber: 0 0 18px rgba(255, 172, 2, 0.35);
+  /* Squared corners, per the DS. */
+  --h-radius: 2px;
+  --h-radius-lg: 4px;
+  --h-radius-pill: 2px;
+  /* Type */
+  --h-font: "Collapse", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --h-font-display: "Rules Compressed", "Collapse", system-ui, sans-serif;
+  --h-font-title: "Mondwest", "Collapse", system-ui, sans-serif;
+  --h-font-mono: "Courier Prime", "Courier New", ui-monospace, Menlo, monospace;
+
+  /* ---- the old "desk" scale, re-pointed at the Hermes palette ------------
+     Every existing rule that reads a --desk-* token now paints Hermes brand
+     without being rewritten. Kept as the neutral surface ramp. */
+  --desk-surface-0: var(--h-bg);
+  --desk-surface-1: var(--h-bg-raised);
+  --desk-surface-2: var(--h-bg-panel);
+  --desk-surface-3: #2e1c06;
+  --desk-surface-4: #3f2708;
+  --desk-text-primary: var(--h-cream);
+  --desk-text-secondary: #e2cfae;
+  --desk-text-tertiary: #b39a72;
+  --desk-hairline: var(--h-hairline);
+  --desk-hairline-strong: var(--h-hairline-strong);
+  --desk-control-border: rgba(255, 172, 2, 0.42);
+  --desk-accent: var(--h-amber);
+  --desk-accent-surface: var(--h-wash-strong);
+  --desk-accent-ink: var(--h-amber-ink);
+  --desk-success: var(--h-success);
+  --desk-success-surface: rgba(74, 222, 128, 0.14);
+  --desk-warn: var(--h-warning);
+  --desk-warn-surface: rgba(255, 189, 56, 0.14);
+  --desk-danger: var(--h-danger);
+  --desk-danger-surface: rgba(251, 44, 54, 0.14);
+  --desk-focus-ring: var(--h-amber);
+  --desk-radius-xs: 2px;
+  --desk-radius-sm: 2px;
+  --desk-radius-md: 2px;
+  --desk-radius-lg: 4px;
+  --desk-radius-pill: 2px;
+  --desk-shadow-raised: var(--h-bevel);
+  --desk-shadow-popover: var(--h-shadow-pop);
+  --desk-shadow-modal: var(--h-shadow-modal);
+  /* Pip, the courier owl: winged gold petasos. Secondary brand accent. */
+  --pip-gold: var(--h-amber);
+  /* Wallpaper glow tints. */
+  --ca-brand-tint: #ffac02;
+  --ca-pink-soft: #fff6e5;
+
+  /* ---- canvas aliases ---------------------------------------------------- */
+  --bg: var(--h-bg);
+  --card: var(--h-bg-raised);
+  --card-hover: var(--h-bg-panel);
+  --card-border: var(--h-hairline);
+  --panel: var(--h-bg-panel);
+  --line: var(--h-hairline-strong);
   --text: var(--desk-text-primary);
   --text-2: var(--desk-text-secondary);
   --text-3: var(--desk-text-tertiary);
   --text-4: var(--desk-text-tertiary);
-  --accent: var(--desk-accent);
-  --st-working: var(--desk-success);
-  --st-ask: var(--desk-warn);
-  --st-review: var(--desk-accent);
-  --st-failed: var(--desk-danger);
+  --accent: var(--h-amber);
+  --accent-dim: var(--h-wash-strong);
+  --warn: var(--h-warning);
+  --danger: var(--h-danger);
+  --link: var(--h-amber);
+  --st-working: var(--h-success);
+  --st-ask: var(--h-warning);
+  --st-review: var(--h-amber);
+  --st-failed: var(--h-danger);
   --st-stopped: var(--desk-text-tertiary);
-  --accent-dim: var(--desk-accent-surface);
-  --warn: var(--desk-warn);
-  --danger: var(--desk-danger);
-  --link: var(--desk-accent);
-  --radius: var(--desk-radius-md);
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
-  --mono: "SFMono-Regular", ui-monospace, Menlo, monospace;
+  --radius: var(--h-radius);
+  --font: var(--h-font);
+  --mono: var(--h-font-mono);
   color-scheme: dark;
 }
 
@@ -81,12 +180,44 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: #000;
+  background: var(--h-bg);
   color: var(--text);
-  font: 14px/1.45 var(--font);
+  font: 14px/1.45 var(--h-font);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   overflow: hidden;
   overscroll-behavior: none;
+}
+
+/* Scrollbars, Hermes-branded: a hairline amber rail that only shows on hover. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: var(--h-hairline-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 0;
+  min-height: 24px;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--h-hairline-strong);
 }
 
 button {
@@ -99,13 +230,127 @@ button {
 }
 
 ::selection {
-  background: var(--desk-accent-surface);
-  color: var(--desk-text-primary);
+  background: var(--h-amber);
+  color: var(--h-bg-base);
 }
 
 #app {
   position: fixed;
   inset: 0;
+}
+
+/* ---- Hermes brand primitives ----------------------------------------------
+   The DS's `text-display` utility: uppercase, wide tracking, in the compressed
+   Rules face. Used on chrome only (buttons, badges, section headings, labels) —
+   never on body copy. */
+
+.display,
+.text-display {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+}
+
+.display-tight {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+/* Mondwest: the display face for the wordmark and page titles. */
+.title-face {
+  font-family: var(--h-font-title);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* The DS dither: a 2px checkerboard in currentColor. Cheap, no assets. */
+.dither {
+  background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 2px 2px;
+}
+
+@keyframes hermes-arc {
+  0% {
+    background-position: 15% 15%;
+  }
+  100% {
+    background-position: 75% 75%;
+  }
+}
+
+/* The DS arc-border: a gradient stroke that travels around the box. Painted
+   with a masked ring so it hugs any radius without a wrapper element. */
+.arc-border {
+  position: relative;
+}
+
+.arc-border::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    160deg,
+    transparent 0%,
+    rgba(255, 246, 229, 0.1) 15%,
+    var(--h-amber) 20%,
+    var(--h-bg-base) 25%,
+    transparent 35%,
+    transparent 40%,
+    rgba(255, 246, 229, 0.1) 55%,
+    var(--h-amber) 60%,
+    var(--h-bg-base) 65%,
+    transparent 75%,
+    transparent 80%,
+    rgba(255, 246, 229, 0.1) 95%,
+    var(--h-amber) 100%
+  );
+  background-size: 300% 300%;
+  animation: hermes-arc 2.23s linear infinite;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arc-border::after {
+    animation: none;
+  }
+}
+
+@keyframes hermes-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes hermes-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes hermes-scan {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
 }
 
 .boot {
@@ -134,52 +379,83 @@ button {
   cursor: grabbing !important;
 }
 
-/* ---- hermes-desk dark wallpapers -------------------------------------------
-   Painted on .stage, BEHIND the GPU-composited .world layer, so pan/zoom
-   never repaints them. Near-black base + very low-opacity brand-tint (top
-   left) and pink-soft (top right) glows, ported from hermes-desk's dark
-   chat-wall variants and dimmed so cards stay readable. Static gradients
+/* ---- Hermes wallpapers -----------------------------------------------------
+   Painted on .stage, BEHIND the GPU-composited .world layer, so pan/zoom never
+   repaints them. Warm near-black ground (#170d02) with the brand amber
+   (#ffac02) and cream (#fff6e5) as the only light sources. Static gradients
    only — nothing to disable under prefers-reduced-motion. Cards keep opaque
-   fills; text never sits directly on a glow area. */
+   fills, so text never sits directly on a glow area. */
 
 .stage {
-  background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(183, 217, 254, 0.16) 0%, transparent 55%),
-    radial-gradient(900px 500px at 90% 0%, rgba(255, 228, 239, 0.12) 0%, transparent 50%),
-    linear-gradient(180deg, #171717 0%, #000000 100%);
+  background: var(--h-bg);
 }
 
-.stage.wall-sky {
+/* Amber (default): an amber horizon rising out of warm black. */
+.stage.wall-amber {
   background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(183, 217, 254, 0.16) 0%, transparent 55%),
-    radial-gradient(900px 500px at 90% 0%, rgba(255, 228, 239, 0.12) 0%, transparent 50%),
-    linear-gradient(180deg, #171717 0%, #000000 100%);
+    radial-gradient(1100px 560px at 12% -8%, rgba(255, 172, 2, 0.2) 0%, transparent 58%),
+    radial-gradient(820px 460px at 88% 4%, rgba(255, 246, 229, 0.07) 0%, transparent 52%),
+    radial-gradient(1400px 900px at 50% 118%, rgba(255, 172, 2, 0.1) 0%, transparent 60%),
+    linear-gradient(180deg, #1d1102 0%, #170d02 55%, #0d0701 100%);
 }
 
-.stage.wall-haze {
-  background:
-    repeating-linear-gradient(
-      -32deg,
-      rgba(255, 255, 255, 0.05) 0 1px,
-      transparent 1px 8px
-    ),
-    radial-gradient(1200px 600px at 10% -10%, rgba(183, 217, 254, 0.16) 0%, transparent 55%),
-    radial-gradient(900px 500px at 90% 0%, rgba(255, 228, 239, 0.12) 0%, transparent 50%),
-    linear-gradient(180deg, #171717 0%, #000000 100%);
+/* Dither: the DS 2px checkerboard, amber on warm black. */
+.stage.wall-dither {
+  background-color: var(--h-bg);
+  background-image:
+    repeating-conic-gradient(rgba(255, 172, 2, 0.08) 0% 25%, transparent 0% 50%),
+    radial-gradient(1000px 520px at 50% -10%, rgba(255, 172, 2, 0.16) 0%, transparent 62%);
+  background-size:
+    4px 4px,
+    auto;
 }
 
-.stage.wall-blush {
-  background:
-    radial-gradient(900px 520px at 88% 8%, rgba(255, 228, 239, 0.14) 0%, transparent 52%),
-    radial-gradient(700px 420px at 18% 108%, rgba(245, 154, 186, 0.1) 0%, transparent 48%),
-    radial-gradient(1100px 560px at 8% -12%, rgba(183, 217, 254, 0.16) 0%, transparent 55%),
-    linear-gradient(180deg, #171717 0%, #000000 100%);
+/* Stars: a courier's night sky — cream specks tiled over an amber nebula. */
+.stage.wall-stars {
+  background-color: #100901;
+  background-image:
+    radial-gradient(1.6px 1.6px at 20px 30px, rgba(255, 246, 229, 0.7) 50%, transparent 51%),
+    radial-gradient(1.2px 1.2px at 120px 92px, rgba(255, 246, 229, 0.45) 50%, transparent 51%),
+    radial-gradient(1px 1px at 202px 44px, rgba(255, 246, 229, 0.35) 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 262px 162px, rgba(255, 172, 2, 0.6) 50%, transparent 51%),
+    radial-gradient(1px 1px at 62px 204px, rgba(255, 246, 229, 0.4) 50%, transparent 51%),
+    radial-gradient(1.2px 1.2px at 170px 252px, rgba(255, 246, 229, 0.5) 50%, transparent 51%),
+    radial-gradient(1200px 700px at 65% 112%, rgba(255, 172, 2, 0.14) 0%, transparent 62%),
+    radial-gradient(900px 500px at 8% -10%, rgba(255, 172, 2, 0.12) 0%, transparent 55%);
+  background-size:
+    320px 320px,
+    320px 320px,
+    320px 320px,
+    320px 320px,
+    320px 320px,
+    320px 320px,
+    auto,
+    auto;
 }
 
-.stage.wall-linen {
-  background-color: #0a0a0a;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1.4px);
-  background-size: 11px 11px;
+/* Grid: a blueprint. Amber hairlines every 24px, heavier every 120px. */
+.stage.wall-grid {
+  background-color: #140c02;
+  background-image:
+    linear-gradient(rgba(255, 172, 2, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 172, 2, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(255, 172, 2, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 172, 2, 0.11) 1px, transparent 1px),
+    radial-gradient(1200px 700px at 50% -12%, rgba(255, 172, 2, 0.13) 0%, transparent 60%);
+  background-size:
+    24px 24px,
+    24px 24px,
+    120px 120px,
+    120px 120px,
+    auto;
+}
+
+/* Void: almost nothing — a faint amber core inside a hard vignette. */
+.stage.wall-void {
+  background:
+    radial-gradient(900px 520px at 50% 42%, rgba(255, 172, 2, 0.07) 0%, transparent 70%),
+    radial-gradient(125% 95% at 50% 50%, transparent 42%, rgba(0, 0, 0, 0.8) 100%),
+    #120a01;
 }
 
 .world {
@@ -310,8 +586,8 @@ button {
 }
 
 .card.selected {
-  border-color: rgba(184, 216, 255, 0.5);
-  box-shadow: 0 0 0 3px rgba(184, 216, 255, 0.12);
+  border-color: var(--h-amber);
+  box-shadow: 0 0 0 3px rgba(255, 172, 2, 0.18);
 }
 
 .card.inert {
@@ -449,14 +725,14 @@ button {
 
 .dot.ask {
   background: var(--warn);
-  box-shadow: 0 0 0 3px rgba(239, 197, 140, 0.18);
+  box-shadow: 0 0 0 3px rgba(255, 189, 56, 0.18);
   animation: pulse 1.8s ease-in-out infinite;
 }
 
 
 @keyframes pulse {
   50% {
-    box-shadow: 0 0 0 5px rgba(239, 197, 140, 0.05);
+    box-shadow: 0 0 0 5px rgba(255, 189, 56, 0.05);
   }
 }
 
@@ -504,13 +780,13 @@ button {
 
 .mark.needs-you {
   background: var(--st-ask);
-  box-shadow: 0 0 0 3px rgba(239, 197, 140, 0.2);
+  box-shadow: 0 0 0 3px rgba(255, 189, 56, 0.2);
   animation: pulse 1.8s ease-in-out infinite;
 }
 
 .mark.review {
   background: var(--st-review);
-  box-shadow: 0 0 0 3px rgba(167, 206, 255, 0.2);
+  box-shadow: 0 0 0 3px rgba(255, 172, 2, 0.2);
 }
 
 .mark.failed {
@@ -535,9 +811,9 @@ button {
 
 /* Working: desk success edge with a light travelling along it. */
 .card.st-working {
-  border-color: rgba(163, 217, 181, 0.3);
+  border-color: rgba(74, 222, 128, 0.3);
   background: var(--desk-success-surface);
-  box-shadow: 0 0 28px rgba(163, 217, 181, 0.08);
+  box-shadow: 0 0 28px rgba(74, 222, 128, 0.08);
 }
 
 .card.st-working:hover {
@@ -546,8 +822,8 @@ button {
 
 .card.st-working .card-accent {
   background:
-    linear-gradient(90deg, transparent, rgba(163, 217, 181, 0.9), transparent) -40% 0 / 40% 100% no-repeat,
-    rgba(163, 217, 181, 0.55);
+    linear-gradient(90deg, transparent, rgba(74, 222, 128, 0.9), transparent) -40% 0 / 40% 100% no-repeat,
+    rgba(74, 222, 128, 0.55);
   animation: sweep 2.4s cubic-bezier(0.45, 0, 0.35, 1) infinite;
 }
 
@@ -565,7 +841,7 @@ button {
 
 /* Needs you: desk warn, pulsing. */
 .card.st-needs-you {
-  border-color: rgba(239, 197, 140, 0.5);
+  border-color: rgba(255, 189, 56, 0.5);
   background: var(--desk-warn-surface);
   animation: ask-glow 2.2s ease-in-out infinite;
 }
@@ -581,13 +857,13 @@ button {
 
 @keyframes ask-glow {
   50% {
-    box-shadow: 0 0 26px rgba(239, 197, 140, 0.18);
+    box-shadow: 0 0 26px rgba(255, 189, 56, 0.18);
   }
 }
 
 /* To review: finished since you last looked. */
 .card.st-review {
-  border-color: rgba(167, 206, 255, 0.32);
+  border-color: rgba(255, 172, 2, 0.32);
   background: var(--desk-accent-surface);
 }
 
@@ -609,7 +885,7 @@ button {
 }
 
 .card.st-failed.fresh {
-  border-color: rgba(242, 168, 173, 0.4);
+  border-color: rgba(251, 44, 54, 0.4);
   background: var(--desk-danger-surface);
 }
 
@@ -652,7 +928,7 @@ button {
   content: "";
   position: absolute;
   inset: -16px -20px;
-  border: 1px dashed rgba(163, 217, 181, 0.2);
+  border: 1px dashed rgba(74, 222, 128, 0.2);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -695,7 +971,7 @@ button {
   position: fixed;
   inset: 0;
   z-index: 900;
-  background: rgba(6, 6, 6, 0.62);
+  background: rgba(12, 7, 1, 0.72);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.35s ease;
@@ -752,7 +1028,7 @@ button {
   flex: none;
   border-radius: 50%;
   background: var(--desk-surface-3);
-  box-shadow: 0 0 0 1px var(--desk-hairline-strong), 0 0 12px rgba(232, 185, 110, 0.25);
+  box-shadow: 0 0 0 1px var(--desk-hairline-strong), 0 0 12px rgba(255, 172, 2, 0.25);
 }
 
 .stats {
@@ -778,7 +1054,7 @@ button {
   border-radius: var(--desk-radius-pill);
   font-size: 12px;
   color: var(--text-3);
-  background: rgba(22, 22, 22, 0.86);
+  background: var(--h-bg-panel);
   border: 1px solid var(--desk-hairline);
   white-space: nowrap;
   transition:
@@ -805,7 +1081,7 @@ button {
 
 .chip.working .chip-dot {
   background: var(--st-working);
-  box-shadow: 0 0 0 3px rgba(163, 217, 181, 0.18);
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.18);
   animation: blink-soft 1.6s ease-in-out infinite;
 }
 
@@ -818,7 +1094,7 @@ button {
 }
 
 .chip.needs-you:not(.zero) {
-  border-color: rgba(239, 197, 140, 0.45);
+  border-color: rgba(255, 189, 56, 0.45);
   color: var(--desk-warn);
 }
 
@@ -832,17 +1108,17 @@ button {
 
 .chip.on.working {
   background: var(--desk-success-surface);
-  border-color: rgba(163, 217, 181, 0.5);
+  border-color: rgba(74, 222, 128, 0.5);
 }
 
 .chip.on.needs-you {
   background: var(--desk-warn-surface);
-  border-color: rgba(239, 197, 140, 0.55);
+  border-color: rgba(255, 189, 56, 0.55);
 }
 
 .chip.on.review {
   background: var(--desk-accent-surface);
-  border-color: rgba(167, 206, 255, 0.5);
+  border-color: rgba(255, 172, 2, 0.5);
 }
 
 .chip-action {
@@ -862,7 +1138,7 @@ button {
 
 @keyframes blink-soft {
   50% {
-    box-shadow: 0 0 0 5px rgba(163, 217, 181, 0.06);
+    box-shadow: 0 0 0 5px rgba(74, 222, 128, 0.06);
   }
 }
 
@@ -912,7 +1188,7 @@ button {
   height: 30px;
   padding: 0 11px;
   border-radius: var(--desk-radius-pill);
-  background: rgba(22, 22, 22, 0.86);
+  background: var(--h-bg-panel);
   border: 1px solid var(--desk-hairline);
   color: var(--text-4);
   backdrop-filter: blur(12px);
@@ -956,8 +1232,8 @@ button {
 
 .badge {
   font-size: 11px;
-  color: #b7afff;
-  background: rgba(138, 124, 255, 0.12);
+  color: var(--h-amber-bright);
+  background: rgba(255, 172, 2, 0.12);
   border-radius: var(--desk-radius-pill);
   padding: 3px 9px;
 }
@@ -991,7 +1267,7 @@ button {
   border-radius: 50%;
   color: var(--text-4);
   border: 1px solid var(--desk-hairline);
-  background: rgba(22, 22, 22, 0.86);
+  background: var(--h-bg-panel);
   font-size: 12px;
 }
 
@@ -1010,7 +1286,7 @@ button {
   gap: 4px;
   padding: 4px;
   border-radius: var(--desk-radius-pill);
-  background: rgba(20, 20, 20, 0.9);
+  background: var(--h-bg-panel);
   border: 1px solid var(--desk-hairline-strong);
   box-shadow: var(--desk-shadow-popover);
   backdrop-filter: blur(14px);
@@ -1179,7 +1455,7 @@ button {
 }
 
 .panel[data-status="working"]::before {
-  background: rgba(163, 217, 181, 0.55);
+  background: rgba(74, 222, 128, 0.55);
 }
 
 .panel[data-status="needs-you"]::before {
@@ -1626,8 +1902,8 @@ button {
 }
 
 .msg.ask .body {
-  border: 1px solid rgba(239, 197, 140, 0.3);
-  background: rgba(239, 197, 140, 0.06);
+  border: 1px solid rgba(255, 189, 56, 0.3);
+  background: rgba(255, 189, 56, 0.06);
   border-radius: var(--desk-radius-md);
   padding: 14px 16px;
 }
@@ -1865,7 +2141,7 @@ button {
   position: fixed;
   inset: 0;
   z-index: 1200;
-  background: rgba(6, 6, 6, 0.55);
+  background: rgba(12, 7, 1, 0.6);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -2080,7 +2356,7 @@ button {
 .empty-pip {
   width: 112px;
   height: 112px;
-  filter: drop-shadow(0 10px 36px rgba(232, 185, 110, 0.28));
+  filter: drop-shadow(0 10px 36px rgba(255, 172, 2, 0.28));
 }
 
 .empty-actions {
@@ -2288,7 +2564,7 @@ button {
   border-radius: var(--desk-radius-pill);
   font-size: 12.5px;
   color: var(--text-2);
-  background: rgba(22, 22, 22, 0.86);
+  background: var(--h-bg-panel);
   border: 1px solid var(--desk-hairline);
 }
 
@@ -2327,7 +2603,7 @@ button {
 }
 
 .tiles-open-btn.live .tiles-n {
-  background: rgba(163, 217, 181, 0.2);
+  background: rgba(74, 222, 128, 0.2);
   color: var(--desk-success);
 }
 
@@ -2500,12 +2776,12 @@ button {
 }
 
 .tile[data-status="working"] {
-  border-top-color: rgba(163, 217, 181, 0.55);
-  box-shadow: inset 0 2px 0 rgba(163, 217, 181, 0.55);
+  border-top-color: rgba(74, 222, 128, 0.55);
+  box-shadow: inset 0 2px 0 rgba(74, 222, 128, 0.55);
 }
 
 .tile[data-status="needs-you"] {
-  border-color: rgba(239, 197, 140, 0.55);
+  border-color: rgba(255, 189, 56, 0.55);
   border-left-color: var(--project);
   box-shadow: inset 0 2px 0 var(--st-ask);
   animation: ask-glow 2.2s ease-in-out infinite;
@@ -2779,7 +3055,7 @@ button {
   border-radius: var(--desk-radius-pill);
   font-size: 12.5px;
   color: var(--text-3);
-  background: rgba(22, 22, 22, 0.86);
+  background: var(--h-bg-panel);
   border: 1px solid var(--desk-hairline);
   white-space: nowrap;
 }
@@ -2797,19 +3073,19 @@ button {
 
 .aa-toggle.confirming {
   color: var(--st-ask);
-  border-color: rgba(239, 197, 140, 0.6);
+  border-color: rgba(255, 189, 56, 0.6);
 }
 
 .aa-toggle.on {
   color: var(--desk-warn);
   background: var(--desk-warn-surface);
-  border-color: rgba(239, 197, 140, 0.55);
+  border-color: rgba(255, 189, 56, 0.55);
 }
 
 .aa-toggle.on .aa-dot {
   border-color: var(--st-ask);
   background: var(--st-ask);
-  box-shadow: 0 0 0 3px rgba(239, 197, 140, 0.2);
+  box-shadow: 0 0 0 3px rgba(255, 189, 56, 0.2);
 }
 
 .chip-action.allow {
@@ -2818,7 +3094,7 @@ button {
 }
 
 .btn.allow-all {
-  border-color: rgba(239, 197, 140, 0.45);
+  border-color: rgba(255, 189, 56, 0.45);
   color: var(--desk-warn);
 }
 
@@ -2872,4 +3148,1060 @@ button {
   .aa-label {
     display: none;
   }
+}
+
+/* ============================================================================
+   HERMES BRAND LAYER
+   The chrome, re-skinned in the Nous Research design language: squared corners,
+   hairline amber rules, hard 1px bevels, uppercase compressed display type, and
+   brand amber as the only accent. These rules come last on purpose, so they win
+   over the neutral base theme above.
+   ========================================================================== */
+
+/* ---- top bar --------------------------------------------------------------- */
+
+.topbar {
+  padding: 10px 14px;
+  gap: 14px;
+}
+
+.brand {
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* Pip rides in a lit amber ring: the brand lockup. */
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  border-radius: 0;
+  background: radial-gradient(circle at 50% 22%, rgba(255, 172, 2, 0.24), rgba(23, 13, 2, 0.92));
+  border: 1px solid var(--h-hairline-strong);
+  box-shadow: var(--h-bevel), 0 0 16px rgba(255, 172, 2, 0.22);
+  object-fit: contain;
+}
+
+.brand-lockup {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  line-height: 1;
+  min-width: 0;
+}
+
+.brand-name {
+  font-family: var(--h-font-title);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--h-cream);
+}
+
+.brand-sub {
+  font-family: var(--h-font-display);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--h-amber);
+}
+
+.conn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 0;
+  background: var(--h-amber-deep);
+}
+
+.conn-dot[data-state="live"] {
+  background: var(--h-amber);
+  box-shadow: 0 0 0 3px rgba(255, 172, 2, 0.14);
+}
+
+.conn-dot[data-state="demo"] {
+  background: var(--h-warning);
+}
+
+.conn-dot[data-state="reconnecting"] {
+  background: var(--h-warning);
+  animation: hermes-blink 1s steps(2, end) infinite;
+}
+
+/* ---- status chips: DS badges ---------------------------------------------- */
+
+.chips {
+  gap: 6px;
+  margin-left: 12px;
+}
+
+.chip {
+  height: 24px;
+  padding: 0 9px;
+  gap: 7px;
+  border-radius: 0;
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  background: var(--h-wash);
+  border: 1px solid var(--h-hairline);
+  box-shadow: var(--h-bevel);
+}
+
+.chip:hover {
+  color: var(--h-cream);
+  border-color: var(--h-hairline-strong);
+}
+
+.chip-n {
+  font-family: var(--h-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--h-cream);
+}
+
+.chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 0;
+}
+
+.chip.working .chip-dot {
+  background: var(--h-success);
+  box-shadow: none;
+  animation: hermes-blink 1.6s steps(2, end) infinite;
+}
+
+.chip.needs-you .chip-dot {
+  background: var(--h-warning);
+}
+
+.chip.review .chip-dot {
+  background: var(--h-amber);
+}
+
+.chip.needs-you:not(.zero) {
+  border-color: rgba(255, 189, 56, 0.45);
+  color: var(--h-warning);
+}
+
+.chip.on.working {
+  background: rgba(74, 222, 128, 0.14);
+  border-color: rgba(74, 222, 128, 0.5);
+  color: var(--h-success);
+}
+
+.chip.on.needs-you {
+  background: rgba(255, 189, 56, 0.14);
+  border-color: rgba(255, 189, 56, 0.55);
+  color: var(--h-warning);
+}
+
+.chip.on.review {
+  background: var(--h-wash-strong);
+  border-color: var(--h-hairline-hard);
+  color: var(--h-amber);
+}
+
+.chip-action {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--h-amber);
+}
+
+.chip-action:hover {
+  color: var(--h-amber-bright);
+}
+
+/* ---- search ---------------------------------------------------------------- */
+
+.search {
+  width: 200px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 0;
+  background: var(--h-bg-inset);
+  border: 1px solid var(--h-hairline);
+  color: var(--text-3);
+  box-shadow: var(--h-bevel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.search:focus-within,
+.search.has-value {
+  width: min(340px, 50vw);
+  border-color: var(--h-amber);
+  color: var(--h-amber);
+  box-shadow: var(--h-bevel), 0 0 0 1px rgba(255, 172, 2, 0.35);
+}
+
+.search input {
+  font: 13px var(--h-font);
+}
+
+.search input::placeholder {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* ---- buttons: DS solid / outlined ------------------------------------------ */
+
+.new-btn {
+  height: 28px;
+  border-radius: 0;
+  background: var(--h-amber);
+  color: var(--h-bg-base);
+  border: 1px solid var(--h-amber);
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 11.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  box-shadow: var(--h-bevel-lit);
+}
+
+.new-btn:hover {
+  background: var(--h-amber-bright);
+  border-color: var(--h-amber-bright);
+  box-shadow: var(--h-bevel-lit);
+}
+
+.new-btn .plus {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 0;
+  color: var(--text-3);
+  background: var(--h-bg-panel);
+  border: 1px solid var(--h-hairline);
+  box-shadow: var(--h-bevel);
+  font-family: var(--h-font-display);
+  font-weight: 600;
+}
+
+.icon-btn:hover {
+  color: var(--h-amber);
+  border-color: var(--h-hairline-strong);
+}
+
+.tiles-open-btn,
+.aa-toggle {
+  height: 28px;
+  border-radius: 0;
+  background: var(--h-bg-panel);
+  border: 1px solid var(--h-hairline);
+  box-shadow: var(--h-bevel);
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.tiles-open-btn:hover,
+.tiles-open-btn.on {
+  color: var(--h-amber);
+  border-color: var(--h-hairline-hard);
+}
+
+.tiles-n {
+  border-radius: 0;
+  background: var(--h-wash-strong);
+  color: var(--h-cream);
+  font-family: var(--h-font-mono);
+}
+
+.tiles-open-btn.live .tiles-n {
+  background: rgba(74, 222, 128, 0.16);
+  color: var(--h-success);
+}
+
+.badge {
+  border-radius: 0;
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--h-warning);
+  background: rgba(255, 189, 56, 0.12);
+  border: 1px solid rgba(255, 189, 56, 0.3);
+  padding: 3px 8px;
+}
+
+.btn {
+  border-radius: 0;
+  border: 1px solid var(--h-hairline-strong);
+  background: var(--h-bg-panel);
+  color: var(--h-cream);
+  box-shadow: var(--h-bevel);
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 11.5px;
+}
+
+.btn:hover {
+  border-color: var(--h-hairline-hard);
+  background: #2e1c06;
+}
+
+.btn.primary {
+  background: var(--h-amber);
+  border-color: var(--h-amber);
+  color: var(--h-bg-base);
+  box-shadow: var(--h-bevel-lit);
+}
+
+.btn.primary:hover {
+  background: var(--h-amber-bright);
+  border-color: var(--h-amber-bright);
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+}
+
+.btn.ghost:hover {
+  background: var(--h-wash);
+  color: var(--h-cream);
+}
+
+/* ---- dock ------------------------------------------------------------------ */
+
+.dock {
+  bottom: 14px;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 0;
+  background: rgba(23, 13, 2, 0.92);
+  border: 1px solid var(--h-hairline-strong);
+  box-shadow: var(--h-bevel), var(--h-shadow-pop);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.seg {
+  gap: 1px;
+}
+
+.seg-btn {
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 0;
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.seg-btn:hover {
+  color: var(--h-cream);
+  background: var(--h-wash);
+}
+
+.seg-btn.on {
+  background: var(--h-amber);
+  color: var(--h-bg-base);
+  box-shadow: var(--h-bevel-lit);
+}
+
+.seg-btn .seg-spin {
+  color: var(--h-amber);
+}
+
+.seg-btn.on .seg-spin,
+.seg-btn:hover .seg-spin {
+  color: currentColor;
+}
+
+.dock-sep {
+  background: var(--h-hairline);
+}
+
+/* ---- project labels on the canvas ------------------------------------------ */
+
+.group-label {
+  gap: 12px;
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--h-amber);
+}
+
+.group-label .count {
+  font-family: var(--h-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-3);
+}
+
+.gl-mark {
+  font-family: var(--h-font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.gl-mark::before {
+  width: 5px;
+  height: 5px;
+  border-radius: 0;
+}
+
+/* ---- cards ----------------------------------------------------------------- */
+
+.card {
+  padding: 14px 16px 12px;
+  background: linear-gradient(180deg, #211305 0%, #1a1003 100%);
+  border: 1px solid var(--h-hairline);
+  border-radius: 2px;
+  box-shadow: var(--h-bevel), 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+.card:hover {
+  background: linear-gradient(180deg, #2a1806 0%, #1f1304 100%);
+  border-color: var(--h-hairline-strong);
+}
+
+.card.selected {
+  border-color: var(--h-amber);
+  box-shadow: var(--h-bevel), 0 0 0 1px rgba(255, 172, 2, 0.45), 0 0 34px rgba(255, 172, 2, 0.16);
+}
+
+/* The signature Hermes arc: an amber stroke travelling the selected card. */
+.card-arc {
+  position: absolute;
+  inset: -1px;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s;
+  background: linear-gradient(
+    160deg,
+    transparent 0%,
+    rgba(255, 246, 229, 0.1) 15%,
+    var(--h-amber) 20%,
+    var(--h-bg-base) 25%,
+    transparent 35%,
+    transparent 40%,
+    rgba(255, 246, 229, 0.1) 55%,
+    var(--h-amber) 60%,
+    var(--h-bg-base) 65%,
+    transparent 75%,
+    transparent 80%,
+    rgba(255, 246, 229, 0.1) 95%,
+    var(--h-amber) 100%
+  );
+  background-size: 300% 300%;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.card.selected .card-arc {
+  opacity: 1;
+  animation: hermes-arc 2.23s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card.selected .card-arc {
+    animation: none;
+  }
+}
+
+.card-title {
+  font-family: var(--h-font);
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0;
+  color: var(--h-cream);
+}
+
+.card-text {
+  color: var(--text-2);
+}
+
+.card-bullets li::before {
+  color: var(--h-amber);
+}
+
+.card-accent {
+  border-radius: 0;
+}
+
+.card-status .label {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.card-sub {
+  font-family: var(--h-font-mono);
+  font-size: 10.5px;
+}
+
+.card-foot {
+  border-top: 1px solid var(--h-hairline);
+}
+
+.card-new {
+  background: rgba(255, 172, 2, 0.04);
+  border: 1px dashed var(--h-hairline-strong);
+  color: var(--h-amber);
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+.card-new .plus {
+  color: var(--h-amber);
+}
+
+.card-new:hover {
+  background: var(--h-wash-strong);
+  border-color: var(--h-amber);
+}
+
+/* ---- dimming while a session is open --------------------------------------- */
+
+.scrim {
+  background: rgba(12, 7, 1, 0.72);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+}
+
+/* ---- boot splash ----------------------------------------------------------- */
+
+.boot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: radial-gradient(900px 520px at 50% 18%, rgba(255, 172, 2, 0.1) 0%, transparent 62%), var(--h-bg);
+  color: var(--text-3);
+}
+
+.boot-mark {
+  display: grid;
+  place-items: center;
+}
+
+.boot-pip {
+  width: 92px;
+  height: 92px;
+  filter: drop-shadow(0 0 30px rgba(255, 172, 2, 0.35));
+  object-fit: contain;
+  animation: hermes-rise 0.5s ease-out both;
+}
+
+.boot-word {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.boot-hermes {
+  font-family: var(--h-font-title);
+  font-size: 26px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--h-cream);
+}
+
+.boot-canvas {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.44em;
+  text-transform: uppercase;
+  color: var(--h-amber);
+}
+
+.boot-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.boot-cursor {
+  width: 7px;
+  height: 12px;
+  background: var(--h-amber);
+  animation: hermes-blink 1.05s steps(2, end) infinite;
+}
+
+.boot-bar {
+  position: relative;
+  width: 190px;
+  height: 2px;
+  background: var(--h-hairline);
+  overflow: hidden;
+}
+
+.boot-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--h-amber);
+  animation: hermes-scan 1.35s linear infinite;
+}
+
+/* ---- empty state ----------------------------------------------------------- */
+
+.empty-state {
+  gap: 8px;
+}
+
+.empty-brand {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--h-amber);
+  margin-bottom: 6px;
+}
+
+.empty-mark {
+  position: relative;
+}
+
+.empty-mark::after {
+  content: "";
+  position: absolute;
+  inset: -22px;
+  background: radial-gradient(circle, rgba(255, 172, 2, 0.16) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.empty-pip {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 40px rgba(255, 172, 2, 0.32));
+}
+
+.empty-state h1 {
+  font-family: var(--h-font-title);
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--h-cream);
+}
+
+.empty-state p {
+  color: var(--text-2);
+  max-width: 470px;
+}
+
+.empty-actions {
+  margin-top: 20px;
+  gap: 10px;
+}
+
+/* ---- help + toasts --------------------------------------------------------- */
+
+.help {
+  border-radius: 0;
+  background: var(--h-bg-panel);
+  border: 1px solid var(--h-hairline-strong);
+  box-shadow: var(--h-bevel), var(--h-shadow-pop);
+}
+
+.help h2 {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  color: var(--h-amber);
+}
+
+.help dt {
+  font-family: var(--h-font-mono);
+  color: var(--h-cream);
+}
+
+.help dd {
+  color: var(--text-2);
+}
+
+.toast {
+  border-radius: 0;
+  background: var(--h-bg-panel);
+  border: 1px solid var(--h-hairline-strong);
+  border-left: 2px solid var(--h-amber);
+  box-shadow: var(--h-bevel), var(--h-shadow-pop);
+  color: var(--h-cream);
+}
+
+/* ---- panel (open session) -------------------------------------------------- */
+
+.panel {
+  background: linear-gradient(180deg, #1c1103 0%, #170d02 100%);
+  border-left: 1px solid var(--h-hairline-strong);
+  box-shadow: -30px 0 80px rgba(0, 0, 0, 0.6);
+}
+
+.panel::before {
+  height: 2px;
+}
+
+.panel[data-status="working"]::before {
+  background: var(--st-working);
+}
+
+.panel-head {
+  border-bottom: 1px solid var(--h-hairline);
+}
+
+.head-project {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--h-amber);
+}
+
+.head-status .label {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.panel-title {
+  font-family: var(--h-font);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--h-cream);
+}
+
+.panel-line {
+  background: var(--h-hairline);
+}
+
+.head-btn {
+  border-radius: 0;
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.head-btn:hover {
+  background: var(--h-wash);
+  color: var(--h-amber);
+}
+
+.head-btn.stop {
+  color: var(--h-danger);
+}
+
+/* ---- inputs, popovers, picker ---------------------------------------------- */
+
+.composer-input,
+.picker-input,
+.tile-input,
+.ask-form input[type="text"],
+.ask-form input[type="number"],
+.ask-form select {
+  border-radius: 0;
+  background: var(--h-bg-inset);
+  border: 1px solid var(--h-hairline);
+  color: var(--h-cream);
+}
+
+.composer-input:focus,
+.picker-input:focus,
+.tile-input:focus,
+.ask-form input:focus,
+.ask-form select:focus {
+  outline: none;
+  border-color: var(--h-amber);
+  box-shadow: 0 0 0 1px rgba(255, 172, 2, 0.4);
+}
+
+.popover,
+.picker {
+  border-radius: 0;
+  background: var(--h-bg-panel);
+  border: 1px solid var(--h-hairline-strong);
+  box-shadow: var(--h-bevel), var(--h-shadow-modal);
+}
+
+.pop-item:hover,
+.picker-item.active,
+.picker-item:hover {
+  background: var(--h-wash-strong);
+}
+
+.picker-title,
+.pop-label {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--h-amber);
+}
+
+.picker-item.path .picker-icon,
+.picker-icon {
+  color: var(--h-amber);
+}
+
+.picker-scrim {
+  background: rgba(12, 7, 1, 0.72);
+}
+
+.auto-badge {
+  border-radius: 0;
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* ---- tiles ----------------------------------------------------------------- */
+
+.tiles-view {
+  background: var(--h-bg);
+}
+
+.tiles-bar {
+  background: var(--h-bg-raised);
+  border-bottom: 1px solid var(--h-hairline);
+}
+
+.tiles-title {
+  font-family: var(--h-font-title);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--h-cream);
+}
+
+.tiles-name {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--h-amber);
+}
+
+.tiles-btn {
+  border-radius: 0;
+  background: var(--h-bg-panel);
+  border: 1px solid var(--h-hairline);
+  box-shadow: var(--h-bevel);
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.tiles-btn:hover {
+  color: var(--h-cream);
+  border-color: var(--h-hairline-strong);
+}
+
+.tiles-btn.primary {
+  background: var(--h-amber);
+  border-color: var(--h-amber);
+  color: var(--h-bg-base);
+  box-shadow: var(--h-bevel-lit);
+}
+
+.tiles-toggle {
+  border-radius: 0;
+}
+
+.tile {
+  border-radius: 0;
+  background: var(--h-bg-raised);
+  border: 1px solid var(--h-hairline);
+  box-shadow: var(--h-bevel);
+}
+
+.tile-head {
+  border-bottom: 1px solid var(--h-hairline);
+}
+
+.tile-project {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--h-amber);
+}
+
+.tile-status .label {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.tile-btn {
+  border-radius: 0;
+}
+
+.tile-composer {
+  border-top: 1px solid var(--h-hairline);
+}
+
+.tiles-empty-mark {
+  filter: drop-shadow(0 0 24px rgba(255, 172, 2, 0.3));
+}
+
+.tiles-empty h2 {
+  font-family: var(--h-font-title);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--h-cream);
+}
+
+.tiles-empty p {
+  color: var(--text-2);
+}
+
+/* ---- transcript accents ---------------------------------------------------- */
+
+.transcript .msg.user .body,
+.transcript .msg.inbox .body {
+  border-left-color: var(--h-amber);
+}
+
+.md a,
+.link {
+  color: var(--h-amber);
+}
+
+.md code {
+  background: var(--h-wash);
+  color: var(--h-amber-bright);
+  border-radius: 0;
+}
+
+.md pre {
+  background: var(--h-bg-inset);
+  border: 1px solid var(--h-hairline);
+  border-radius: 0;
+}
+
+.md blockquote {
+  border-left-color: var(--h-hairline-strong);
+}
+
+.md th {
+  color: var(--h-amber);
+  font-family: var(--h-font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.activity-head {
+  font-family: var(--h-font-mono);
+}
+
+.divider {
+  color: var(--text-3);
+}
+
+.divider::before,
+.divider::after {
+  background: var(--h-hairline);
+}
+
+/* ---- DS dither rule --------------------------------------------------------
+   The kit's hallmark texture: a 2px checkerboard, used here as the hairline
+   that closes the top bar and caps the dock. Static (no motion to disable). */
+
+.topbar::after,
+.dock::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  pointer-events: none;
+  color: var(--h-amber);
+  opacity: 0.22;
+  background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 2px 2px;
+}
+
+.topbar::after {
+  bottom: -2px;
+}
+
+.dock::after {
+  top: -2px;
+}
+
+/* Section labels take the compressed display face, per the DS label style. */
+.group-label .name,
+.chip-label,
+.stats .label,
+.new-label {
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }

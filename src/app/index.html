@@ -4,14 +4,41 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#0e0e10" />
+    <meta name="theme-color" content="#170d02" />
+    <meta
+      name="description"
+      content="Every Hermes agent session on one infinite, zoomable canvas, with a live tiled view of everything running."
+    />
     <title>Hermes Canvas</title>
     <link rel="icon" href="../../assets/pip.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main id="app" aria-label="Hermes sessions canvas">
-      <div class="boot">Loading sessions…</div>
+      <!-- Brand splash: painted from static markup so it shows before the module
+           loads; boot() re-points the owl and replaces it once the session
+           store answers. -->
+      <div class="boot">
+        <div class="boot-mark">
+          <img
+            class="boot-pip"
+            src="../../assets/pip.svg"
+            alt=""
+            width="92"
+            height="92"
+            draggable="false"
+          />
+        </div>
+        <div class="boot-word">
+          <span class="boot-hermes">Hermes</span>
+          <span class="boot-canvas">Canvas</span>
+        </div>
+        <div class="boot-line">
+          <span>Loading sessions</span>
+          <span class="boot-cursor" aria-hidden="true"></span>
+        </div>
+        <div class="boot-bar" aria-hidden="true"></div>
+      </div>
     </main>
     <script type="module" src="./main.ts"></script>
   </body>

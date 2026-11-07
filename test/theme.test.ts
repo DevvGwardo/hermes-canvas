@@ -42,35 +42,42 @@ function fakeHost() {
   };
 }
 
+function css(): Promise<string> {
+  return Bun.file(new URL("../src/app/styles.css", import.meta.url)).text();
+}
+
 describe("wallpaper ids", () => {
-  test("exactly sky/haze/blush/linen, defaulting to sky", () => {
-    expect([...WALLPAPER_IDS]).toEqual(["sky", "haze", "blush", "linen"]);
-    expect(WALLPAPER_DEFAULT).toBe("sky");
+  test("exactly amber/dither/stars/grid/void, defaulting to amber", () => {
+    expect([...WALLPAPER_IDS]).toEqual(["amber", "dither", "stars", "grid", "void"]);
+    expect(WALLPAPER_DEFAULT).toBe("amber");
     for (const id of WALLPAPER_IDS) expect(WALLPAPER_LABELS[id as WallpaperId]).toBeString();
   });
 
   test("parseWallpaper accepts known ids, falls back otherwise", () => {
-    expect(parseWallpaper("haze")).toBe("haze");
-    expect(parseWallpaper("linen")).toBe("linen");
-    expect(parseWallpaper("nope")).toBe("sky");
-    expect(parseWallpaper(undefined)).toBe("sky");
-    expect(parseWallpaper(null)).toBe("sky");
-    expect(parseWallpaper(42)).toBe("sky");
+    expect(parseWallpaper("dither")).toBe("dither");
+    expect(parseWallpaper("stars")).toBe("stars");
+    expect(parseWallpaper("void")).toBe("void");
+    expect(parseWallpaper("nope")).toBe("amber");
+    expect(parseWallpaper("sky")).toBe("amber"); // the old desk ids are gone
+    expect(parseWallpaper(undefined)).toBe("amber");
+    expect(parseWallpaper(null)).toBe("amber");
+    expect(parseWallpaper(42)).toBe("amber");
   });
 
   test("wallpaperClass maps each id to its stage class", () => {
-    expect(wallpaperClass("sky")).toBe("wall-sky");
-    expect(wallpaperClass("haze")).toBe("wall-haze");
-    expect(wallpaperClass("blush")).toBe("wall-blush");
-    expect(wallpaperClass("linen")).toBe("wall-linen");
+    expect(wallpaperClass("amber")).toBe("wall-amber");
+    expect(wallpaperClass("dither")).toBe("wall-dither");
+    expect(wallpaperClass("stars")).toBe("wall-stars");
+    expect(wallpaperClass("grid")).toBe("wall-grid");
+    expect(wallpaperClass("void")).toBe("wall-void");
   });
 
   test("applyWallpaper swaps exactly one wall-* class", () => {
     const f = fakeHost();
-    applyWallpaper(f.host, "sky");
-    expect([...f.classes]).toEqual(["wall-sky"]);
-    applyWallpaper(f.host, "linen");
-    expect([...f.classes]).toEqual(["wall-linen"]);
+    applyWallpaper(f.host, "amber");
+    expect([...f.classes]).toEqual(["wall-amber"]);
+    applyWallpaper(f.host, "grid");
+    expect([...f.classes]).toEqual(["wall-grid"]);
   });
 });
 
@@ -78,17 +85,18 @@ describe("wallpaper persistence", () => {
   test("uses the hermes-canvas. localStorage prefix", () => {
     expect(WALLPAPER_KEY.startsWith("hermes-canvas.")).toBe(true);
     const store = memStore();
-    saveWallpaper("blush", store);
-    expect(store.dump()[WALLPAPER_KEY]).toBe("blush");
+    saveWallpaper("stars", store);
+    expect(store.dump()[WALLPAPER_KEY]).toBe("stars");
   });
 
-  test("load/save round-trips, unknown stored values reset to sky", () => {
+  test("load/save round-trips, unknown stored values reset to amber", () => {
     const store = memStore();
-    expect(loadWallpaper(store)).toBe("sky");
-    saveWallpaper("haze", store);
-    expect(loadWallpaper(store)).toBe("haze");
-    expect(loadWallpaper(memStore("bogus"))).toBe("sky");
-    expect(loadWallpaper(null)).toBe("sky");
+    expect(loadWallpaper(store)).toBe("amber");
+    saveWallpaper("dither", store);
+    expect(loadWallpaper(store)).toBe("dither");
+    expect(loadWallpaper(memStore("bogus"))).toBe("amber");
+    expect(loadWallpaper(memStore("linen"))).toBe("amber");
+    expect(loadWallpaper(null)).toBe("amber");
   });
 
   test("a throwing store never breaks load/save", () => {
@@ -100,76 +108,97 @@ describe("wallpaper persistence", () => {
         throw new Error("denied");
       },
     };
-    expect(loadWallpaper(bad)).toBe("sky");
-    expect(() => saveWallpaper("sky", bad)).not.toThrow();
+    expect(loadWallpaper(bad)).toBe("amber");
+    expect(() => saveWallpaper("amber", bad)).not.toThrow();
   });
 });
 
-describe("desk theme tokens in styles.css", () => {
-  async function css(): Promise<string> {
-    return Bun.file(new URL("../src/app/styles.css", import.meta.url)).text();
-  }
-
-  test("desk tokens are defined", async () => {
+describe("Hermes brand tokens in styles.css", () => {
+  test("the brand palette is defined (amber on warm near-black)", async () => {
     const text = await css();
     for (const token of [
-      "--desk-surface-0: #0e0e10",
-      "--desk-surface-1: #161618",
-      "--desk-surface-2: #1c1c1f",
-      "--desk-surface-3: #2a2a2e",
-      "--desk-text-primary: #f2f2f5",
-      "--desk-text-secondary: #c4c4ce",
-      "--desk-text-tertiary: #adadb9",
-      "--desk-accent: #a7ceff",
-      "--desk-accent-surface: #253347",
-      "--desk-success: #a3d9b5",
-      "--desk-success-surface: #24352b",
-      "--desk-warn: #efc58c",
-      "--desk-warn-surface: #3b3022",
-      "--desk-danger: #f2a8ad",
-      "--desk-danger-surface: #3c272b",
-      "--desk-focus-ring: #b8d8ff",
-      "--pip-gold: #e8b96e",
+      "--h-bg: #170d02",
+      "--h-bg-raised: #1e1204",
+      "--h-bg-panel: #241605",
+      "--h-bg-inset: #100901",
+      "--h-cream: #fff6e5",
+      "--h-amber: #ffac02",
+      "--h-amber-bright: #ffc63d",
+      "--h-amber-deep: #b87c02",
+      "--h-success: #4ade80",
+      "--h-warning: #ffbd38",
+      "--h-danger: #fb2c36",
+      "--h-hairline: rgba(255, 172, 2, 0.16)",
     ]) {
       expect(text).toContain(token);
     }
   });
 
-  test("status colors map onto desk tokens", async () => {
+  test("status colours map onto the Hermes tokens", async () => {
     const text = await css();
-    expect(text).toContain("--st-working: var(--desk-success)");
-    expect(text).toContain("--st-ask: var(--desk-warn)");
-    expect(text).toContain("--st-review: var(--desk-accent)");
-    expect(text).toContain("--st-failed: var(--desk-danger)");
-    expect(text).toContain("--st-stopped: var(--desk-text-tertiary)");
-    expect(text).toContain("var(--desk-success-surface)");
-    expect(text).toContain("var(--desk-warn-surface)");
-    expect(text).toContain("var(--desk-accent-surface)");
-    expect(text).toContain("var(--desk-danger-surface)");
+    expect(text).toContain("--st-working: var(--h-success)");
+    expect(text).toContain("--st-ask: var(--h-warning)");
+    expect(text).toContain("--st-review: var(--h-amber)");
+    expect(text).toContain("--st-failed: var(--h-danger)");
+    expect(text).toContain("--accent: var(--h-amber)");
+    expect(text).toContain("--pip-gold: var(--h-amber)");
+    // The old cool-blue desk accent must not survive anywhere.
+    expect(text).not.toContain("#a7ceff");
+    expect(text).not.toContain("#b8d8ff");
+    expect(text).not.toContain("rgba(22, 22, 22");
+    expect(text).not.toContain("rgba(184, 216, 255");
   });
 
-  test("all four wallpaper stage classes exist behind the world layer", async () => {
+  test("all five wallpaper stage classes exist behind the world layer", async () => {
     const text = await css();
     for (const id of WALLPAPER_IDS) expect(text).toContain(`.stage.wall-${id}`);
     // World layer keeps its GPU-composited transform; wallpaper is stage-level.
     expect(text).toContain(".world {");
   });
 
-  test("desk radii, font stack, and focus ring are wired up", async () => {
+  test("the Hermes design system is wired up: type, bevels, arc, dither", async () => {
     const text = await css();
-    expect(text).toContain("--desk-radius-sm: 8px");
-    expect(text).toContain("--desk-radius-md: 12px");
-    expect(text).toContain("--desk-radius-lg: 16px");
-    expect(text).toContain("--desk-radius-pill: 999px");
-    expect(text).toContain("SF Pro Text");
-    expect(text).toContain("2px solid var(--desk-focus-ring)");
+    // Squared corners + hard bevels, per the DS.
+    expect(text).toContain("--h-radius: 2px");
+    expect(text).toContain("--h-bevel: inset 1px 1px 0 0");
+    expect(text).toContain("--h-radius-pill: 2px");
+    // Uppercase display utility + the travelling arc stroke.
+    expect(text).toContain("text-transform: uppercase");
+    expect(text).toContain("letter-spacing: 0.2em");
+    expect(text).toContain("animation: hermes-arc 2.23s linear infinite");
+    expect(text).toContain("repeating-conic-gradient");
+    // Focus ring is brand amber now.
+    expect(text).toContain("outline: 2px solid var(--desk-focus-ring)");
   });
 
-  test("pip brand assets exist", async () => {
+  test("every brand font is declared and shipped", async () => {
+    const text = await css();
+    for (const face of ["Collapse", "Rules Compressed", "Mondwest", "Neuebit", "Rules Expanded"]) {
+      expect(text).toContain(`font-family: "${face}"`);
+    }
+    for (const file of [
+      "Collapse-Regular.woff2",
+      "Collapse-Bold.woff2",
+      "RulesCompressed-Regular.woff2",
+      "RulesCompressed-Medium.woff2",
+      "Mondwest-Regular.woff2",
+      "RulesExpanded-Bold.woff2",
+      "Neuebit-Bold.woff2",
+    ]) {
+      const bytes = await Bun.file(new URL(`../assets/fonts/${file}`, import.meta.url)).arrayBuffer();
+      expect(bytes.byteLength).toBeGreaterThan(1000);
+    }
+  });
+
+  test("pip brand assets and the splash are wired up", async () => {
     const svg = await Bun.file(new URL("../assets/pip.svg", import.meta.url)).text();
     expect(svg).toContain("courier owl");
     const html = await Bun.file(new URL("../src/app/index.html", import.meta.url)).text();
     expect(html).toContain("assets/pip.svg");
     expect(html).toContain("<title>Hermes Canvas</title>");
+    expect(html).toContain('name="theme-color" content="#170d02"');
+    // The splash ships as static markup so it paints before the module loads.
+    expect(html).toContain('class="boot-pip"');
+    expect(html).toContain('class="boot-hermes"');
   });
 });
