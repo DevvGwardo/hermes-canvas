@@ -10,8 +10,8 @@ import type { Session } from "../src/app/types"
 // to the lcov lane (unimported files are never instrumented). This pins the
 // two catch bodies the iter-37 sweep surfaced as undriven - setAuto (panel.ts
 // 413) and send (panel.ts 546) - plus the open baseline that makes those
-// pins meaningful. The model-popover catch at 365 stays T43-blocked: the
-// suite-warm models() cache can never reject in-suite.
+// pins meaningful. The model-popover (ex T43) is now covered below: per-
+// backend cache in models.ts gives deterministic listModels per fixture.
 //
 // FakeEl as in test/tiles.test.ts. Fake timers because open() schedules stray
 // timeouts (focus at 260ms, class cleanup at 90ms) whose callbacks would run
@@ -163,6 +163,10 @@ class FakeEl {
     for (const fn of this.handlers[type] ?? []) fn(ev)
   }
 
+  click() {
+    this.fire("click")
+  }
+
   focus() {}
   blur() {}
 
@@ -218,6 +222,16 @@ function textOf(el: FakeEl): string {
   return s
 }
 
+function installStorage(pinned: string | undefined) {
+  const data: Record<string, string> = pinned ? { "occ.model": pinned } : {}
+  ;(globalThis as any).localStorage = {
+    getItem: (k: string) => (k in data ? data[k]! : null),
+    setItem: (k: string, v: string) => void (data[k] = v),
+    removeItem: (k: string) => void delete data[k],
+  }
+  return data
+}
+
 const NOW = Date.now()
 const mk = (id: string, time: Record<string, number>, over: Record<string, any> = {}): Session =>
   ({
@@ -231,12 +245,16 @@ const mk = (id: string, time: Record<string, number>, over: Record<string, any> 
     ...over,
   }) as unknown as Session
 
-function panelBackend(sessions: Session[]) {
+function panelBackend(
+  sessions: Session[],
+  opts: { models?: Array<{ id: string; providerID: string; name: string }>; failModels?: boolean; listModels?: () => Promise<Array<{ id: string; providerID: string; name: string }>> } = {},
+) {
   const prompts: Array<{ id: string; text?: string; delivery?: string }> = []
   const permCalls: Array<{ id: string; rules: unknown }> = []
   const renames: Array<{ id: string; title: string }> = []
   const interrupts: string[] = []
   const viewed: string[] = []
+  const switchCalls: Array<{ id: string; model: { id: string; providerID: string } }> = []
   let failPrompt = false
   let failPerms = false
   const backend = {
@@ -269,6 +287,16 @@ function panelBackend(sessions: Session[]) {
     rename: async (id: string, title: string) => {
       renames.push({ id, title })
     },
+    listModels: opts.listModels
+      ? opts.listModels
+      : async () => {
+          if (opts.failModels) throw new Error("boom")
+          return opts.models ?? []
+        },
+    serverDefaultModel: async () => undefined,
+    switchModel: async (id: string, model: { id: string; providerID: string }) => {
+      switchCalls.push({ id, model })
+    },
   }
   return {
     backend: backend as unknown as Backend,
@@ -277,6 +305,7 @@ function panelBackend(sessions: Session[]) {
     renames,
     interrupts,
     viewed,
+    switchCalls,
     setFailPrompt: (f: boolean) => void (failPrompt = f),
     setFailPerms: (f: boolean) => void (failPerms = f),
   }
@@ -351,12 +380,12 @@ afterEach(() => {
   jest.useRealTimers()
 })
 
-async function panelFixture() {
+async function panelFixture(over: { s1Model?: { id: string; providerID: string }; models?: Array<{ id: string; providerID: string; name: string }>; failModels?: boolean; listModels?: () => Promise<Array<{ id: string; providerID: string; name: string }>> } = {}) {
   const sessions = [
-    mk("s1", { updated: NOW - 60_000, idle: NOW - 60_000 }),
+    mk("s1", { updated: NOW - 60_000, idle: NOW - 60_000 }, over.s1Model ? { model: over.s1Model } : {}),
     mk("s2", { updated: NOW - 120_000, idle: NOW - 120_000 }, { parentID: "s1", title: "Kid work" }), // subagent of s1
   ]
-  const b = panelBackend(sessions)
+  const b = panelBackend(sessions, { models: over.models, failModels: over.failModels, listModels: over.listModels })
   const store = new Store(b.backend)
   await store.reload()
   const host = new FakeEl("div")
@@ -382,6 +411,7 @@ async function panelFixture() {
     pinsToggled,
     canvasCalls,
     closed: () => closedCount,
+    switchCalls: b.switchCalls,
     setFailPrompt: b.setFailPrompt,
     setFailPerms: b.setFailPerms,
   }
@@ -685,5 +715,135 @@ describe("SessionPanel", () => {
 
     root.fire("drop", { dataTransfer: { files: [{ type: "application/pdf", name: "doc.pdf" }] } })
     expect(attachRow.children).toHaveLength(1) // non-image drops add nothing
+  })
+
+  it("model popover lists models with current + pinned-default marks and filters", async () => {
+    const models = [
+      { id: "a1", providerID: "alpha", name: "Alpha One" },
+      { id: "b2", providerID: "beta", name: "Beta Two" },
+      { id: "c3", providerID: "gamma", name: "Gamma Three" },
+    ]
+    const { panel } = await panelFixture({ s1Model: { id: "b2", providerID: "beta" }, models })
+    installStorage("alpha/a1") // pinned default for NEW sessions, distinct from this session's current
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const modelBtn = find(root, (e) => e.className.split(/\s+/).includes("model"))!
+    modelBtn.fire("click", { stopPropagation: () => {} })
+    await flush()
+    const pop = find(root, (e) => e.className.includes("popover"))!
+    expect(pop.className).toContain("models")
+    const filter = pop.children[0]!
+    const list = pop.children[1]!
+    expect(filter.placeholder).toBe("Search models")
+    expect(list.children.map((b) => textOf(find(b, (e) => e.className.includes("pop-label"))!))).toEqual(["Alpha One", "Beta Two", "Gamma Three"])
+    expect(list.children[1]!.className).toContain("current") // beta is this session's model
+    expect(list.children[0]!.className).not.toContain("current")
+    expect(textOf(find(list.children[0]!, (e) => e.className.includes("pop-sub"))!)).toContain("default for new sessions")
+    expect(textOf(find(list.children[1]!, (e) => e.className.includes("pop-sub"))!)).not.toContain("default for new sessions")
+
+    filter.value = "gamma"
+    filter.fire("input")
+    expect(list.children).toHaveLength(1)
+    expect(textOf(list.children[0]!)).toContain("Gamma Three")
+
+    filter.value = "zzz-nope"
+    filter.fire("input")
+    expect(list.children).toHaveLength(1)
+    expect(list.children[0]!.className).toContain("pop-empty")
+    expect(list.children[0]!.textContent).toBe("No matching models")
+
+    modelBtn.fire("click", { stopPropagation: () => {} }) // second click toggles closed
+    expect(find(root, (e) => e.className.includes("popover"))).toBeUndefined()
+  })
+
+  it("choosing a model sets the session model, pins it, and calls switchModel; Enter chooses the first row", async () => {
+    const models = [
+      { id: "a1", providerID: "alpha", name: "Alpha One" },
+      { id: "b2", providerID: "beta", name: "Beta Two" },
+    ]
+    const { panel, store, switchCalls } = await panelFixture({ models })
+    const data = installStorage(undefined)
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const modelBtn = find(root, (e) => e.className.split(/\s+/).includes("model"))!
+    modelBtn.fire("click", { stopPropagation: () => {} })
+    await flush()
+    const pop = find(root, (e) => e.className.includes("popover"))!
+    const list = pop.children[1]!
+    list.children[1]!.fire("click") // Beta Two by click
+    await flush()
+    expect(find(root, (e) => e.className.includes("popover"))).toBeUndefined()
+    expect(store.sessions.get("s1")!.model).toEqual({ id: "b2", providerID: "beta" })
+    expect(data["occ.model"]).toBe("beta/b2")
+    expect(switchCalls).toEqual([{ id: "s1", model: { id: "b2", providerID: "beta" } }])
+    expect((panel["modelBtn"] as unknown as FakeEl).textContent).toBe("b2") // header shows the model id, not its display name
+
+    // keyboard path: reopen, Enter picks the first row
+    installStorage(undefined)
+    modelBtn.fire("click", { stopPropagation: () => {} })
+    await flush()
+    const pop2 = find(root, (e) => e.className.includes("popover"))!
+    const filter2 = pop2.children[0]!
+    filter2.value = "alpha"
+    filter2.fire("input")
+    filter2.fire("keydown", { key: "Enter", stopPropagation: () => {} })
+    await flush()
+    expect(store.sessions.get("s1")!.model).toEqual({ id: "a1", providerID: "alpha" })
+    expect(switchCalls.at(-1)).toEqual({ id: "s1", model: { id: "a1", providerID: "alpha" } })
+    expect((panel["modelBtn"] as unknown as FakeEl).textContent).toBe("a1")
+    expect(find(root, (e) => e.className.includes("popover"))).toBeUndefined()
+  })
+
+  it("Escape closes the model popover; a failed list shows the error row and stays open", async () => {
+    const models = [{ id: "a1", providerID: "alpha", name: "Alpha One" }]
+    const { panel } = await panelFixture({ models })
+    installStorage(undefined)
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const modelBtn = find(root, (e) => e.className.split(/\s+/).includes("model"))!
+    modelBtn.fire("click", { stopPropagation: () => {} })
+    await flush()
+    const pop = find(root, (e) => e.className.includes("popover"))!
+    const filter = pop.children[0]!
+    filter.fire("keydown", { key: "Escape", stopPropagation: () => {} })
+    expect(find(root, (e) => e.className.includes("popover"))).toBeUndefined()
+
+    // failure path needs a fresh backend identity: fresh fixture with failModels
+    const f2 = await panelFixture({ failModels: true })
+    installStorage(undefined)
+    f2.panel.open("s1")
+    await flush()
+    const root2 = f2.panel.el as unknown as FakeEl
+    const btn2 = find(root2, (e) => e.className.split(/\s+/).includes("model"))!
+    btn2.fire("click", { stopPropagation: () => {} })
+    await flush()
+    const pop2 = find(root2, (e) => e.className.includes("popover"))!
+    const list2 = pop2.children[1]!
+    expect(list2.children).toHaveLength(1)
+    expect(list2.children[0]!.className).toContain("pop-empty")
+    expect(list2.children[0]!.textContent).toContain("Couldn't list models: boom")
+  })
+
+  it("closing the model popover while loading drops the late result", async () => {
+    let resolveList!: (v: Array<{ id: string; providerID: string; name: string }>) => void
+    const pending = new Promise<Array<{ id: string; providerID: string; name: string }>>((r) => (resolveList = r))
+    const { panel } = await panelFixture({ listModels: () => pending })
+    installStorage(undefined)
+    panel.open("s1")
+    await flush()
+    const root = panel.el as unknown as FakeEl
+    const modelBtn = find(root, (e) => e.className.split(/\s+/).includes("model"))!
+    modelBtn.fire("click", { stopPropagation: () => {} })
+    // do not await yet: the fetch is pending, the Loading row is up
+    const pop = find(root, (e) => e.className.includes("popover"))!
+    expect(pop.children[1]!.children[0]!.textContent).toBe("Loading models…")
+    modelBtn.fire("click", { stopPropagation: () => {} }) // close before the fetch lands
+    expect(find(root, (e) => e.className.includes("popover"))).toBeUndefined()
+    resolveList([{ id: "a1", providerID: "alpha", name: "Alpha One" }])
+    await flush()
+    expect(find(root, (e) => e.className.includes("popover"))).toBeUndefined() // late result dropped, nothing reappears
   })
 })

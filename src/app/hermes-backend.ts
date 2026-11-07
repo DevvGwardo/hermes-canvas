@@ -1,5 +1,5 @@
-// HermesBackend: the same Backend contract as LiveBackend, but served from
-// the local Hermes session store (/api/hermes/*) instead of OpenCode.
+// HermesBackend: implements the Backend contract, served from the local
+// Hermes session store (/api/hermes/*).
 // Hermes has no permission/form/inbox queues, so those read empty and the
 // corresponding replies are accepted no-ops.
 

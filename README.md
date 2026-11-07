@@ -189,7 +189,7 @@ browser ──/api/hermes/*──▶ hermes-canvas (Bun) ──SQLite──▶ <
 - **Store** (`src/app/store.ts`, unchanged): Loads the most recent 600 sessions, active sessions, and project lists on boot; tracks real-time updates through the event feed. Card previews load lazily for visible cards (4 at a time).
 - **Canvas** (`src/app/canvas.ts`, `camera.ts`, `layouts.ts`, unchanged): Renders DOM cards inside a transformed world layer. Layouts are computed as pure functions, movements follow critically damped springs, off-screen cards are culled.
 - **Transcript** (`src/app/transcript.ts`, unchanged): Shared by the open-session panel (`panel.ts`) and every tile (`tiles.ts`). Applies streaming events directly to the transcript and reconciles with `GET /message` after each step.
-- **Backend** (`src/app/hermes-backend.ts`): Implements the same `Backend` interface as the OpenCode and demo backends against `/api/hermes/*`. Permission/inbox/form queues read empty (Hermes approvals happen inside the agent turn); allow-everything maps to `--yolo` on spawned prompts.
+- **Backend** (`src/app/hermes-backend.ts`): Implements the `Backend` interface (shared with the demo backend) against `/api/hermes/*`. Permission/inbox/form queues read empty (Hermes approvals happen inside the agent turn); allow-everything maps to `--yolo` on spawned prompts.
 
 ### Hermes concepts used
 

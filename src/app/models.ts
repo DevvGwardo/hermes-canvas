@@ -28,22 +28,35 @@ export function setDefaultModel(m: ModelRef | undefined) {
 
 export const modelLabel = (m?: ModelRef | null) => (m?.id ? m.id : "Default model")
 
-let cache: Promise<ModelOption[]> | undefined
+// Caches are per-backend (WeakMap), not a single module singleton. Production
+// uses exactly one Backend instance (main.ts), so this behaves identically
+// there; but demo vs live backends no longer pollute each other, and tests
+// get isolation for free by passing a fresh fake backend — no test-only
+// export is needed to reach the rejection / per-backend paths.
+const cacheByBackend = new WeakMap<Backend, Promise<ModelOption[]>>()
 
 export function models(backend: Backend): Promise<ModelOption[]> {
-  cache ??= backend.listModels().catch((e) => {
-    cache = undefined
-    throw e
-  })
-  return cache
+  let cached = cacheByBackend.get(backend)
+  if (!cached) {
+    cached = backend.listModels().catch((e) => {
+      cacheByBackend.delete(backend)
+      throw e
+    })
+    cacheByBackend.set(backend, cached)
+  }
+  return cached
 }
 
-let defaultCache: Promise<ModelOption | undefined> | undefined
+const defaultCacheByBackend = new WeakMap<Backend, Promise<ModelOption | undefined>>()
 
 export function serverDefault(backend: Backend): Promise<ModelOption | undefined> {
-  defaultCache ??= backend.serverDefaultModel().catch(() => {
-    defaultCache = undefined
-    return undefined
-  })
-  return defaultCache
+  let cached = defaultCacheByBackend.get(backend)
+  if (!cached) {
+    cached = backend.serverDefaultModel().catch(() => {
+      defaultCacheByBackend.delete(backend)
+      return undefined
+    })
+    defaultCacheByBackend.set(backend, cached)
+  }
+  return cached
 }

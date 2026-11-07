@@ -192,12 +192,10 @@ describe("NewSessionPicker — folderOptions (path mode)", () => {
 })
 
 describe("NewSessionPicker — modelOptions (model mode)", () => {
-  // models()/serverDefault() cache at MODULE level (models.ts `cache ??=`), so
-  // the list a picker sees is whichever cache the process already holds. These
-  // tests never hardcode it: they read the same shared promises the picker
-  // reads and derive every expectation from them. If the cache is cold their
-  // own fixture backend warms it; if warm, the fixture is ignored and the
-  // shared content is used. Either way the assertions are order-independent.
+  // models()/serverDefault() cache per-backend (WeakMap in models.ts). Each
+  // modelBackend() / listBackend() call is a FRESH backend identity, hence a
+  // fresh cache entry, so these tests are fully deterministic — they hardcode
+  // their fixture lists and no longer need to read shared promises.
   const MODELS: ModelOption[] = [
     { id: "a1", providerID: "alpha", name: "Alpha One" },
     { id: "b2", providerID: "beta", name: "Beta Two" },
@@ -211,13 +209,33 @@ describe("NewSessionPicker — modelOptions (model mode)", () => {
       listSessions: async () => [],
       active: async () => new Set<string>(),
       listFolders: async () => [],
-      listModels: async () => MODELS, // only reached when nothing warmed the cache yet
+      listModels: async () => MODELS,
       serverDefaultModel: async () => DEF,
+    } as unknown as Backend
+  }
+
+  function listBackend(list: ModelOption[], def: ModelOption | undefined) {
+    return {
+      kind: "demo",
+      listProjects: async () => [],
+      listSessions: async () => [],
+      active: async () => new Set<string>(),
+      listFolders: async () => [],
+      listModels: async () => list,
+      serverDefaultModel: async () => def,
     } as unknown as Backend
   }
 
   async function pickerWithModels() {
     const backend = modelBackend()
+    const store = new Store(backend)
+    await store.reload()
+    const { p } = newPicker(backend, store)
+    return p
+  }
+
+  async function pickerWithLists(list: ModelOption[], def: ModelOption | undefined) {
+    const backend = listBackend(list, def)
     const store = new Store(backend)
     await store.reload()
     const { p } = newPicker(backend, store)
@@ -292,6 +310,43 @@ describe("NewSessionPicker — modelOptions (model mode)", () => {
     // The current model's row sits under the server-default row; with an empty
     // cache the server-default row itself is the current one at index 0.
     expect(p["active"]).toBe(known.length ? 1 : 0)
+  })
+
+  it("sorts the current choice first, then keeps server order for the rest (T43)", async () => {
+    const list: ModelOption[] = [
+      { id: "a1", providerID: "alpha", name: "Alpha One" },
+      { id: "b2", providerID: "beta", name: "Beta Two" },
+      { id: "c3", providerID: "gamma", name: "Gamma Three" },
+    ]
+    const p = await pickerWithLists(list, DEF)
+    p["model"] = { id: "b2", providerID: "beta" }
+    const rows = (await p["modelOptions"]("", 0)) as any[]
+    expect(rows.map((r) => r.label)).toEqual(["Hermes default", "Beta Two", "Alpha One", "Gamma Three"])
+    expect(rows[1]!.current).toBe(true)
+    expect(rows[2]!.current).toBe(false)
+    expect(rows[3]!.current).toBe(false)
+  })
+
+  it("uses the fallback text when the server reports no default (T43)", async () => {
+    const p = await pickerWithLists(MODELS, undefined)
+    p["model"] = undefined
+    const rows = (await p["modelOptions"]("", 0)) as any[]
+    expect(rows[0]!.kind).toBe("server-default")
+    expect(rows[0]!.sub).toBe("Whatever your Hermes config picks")
+    expect(rows[0]!.current).toBe(true)
+  })
+
+  it("caps model rows at 80 (plus the server-default row) (T43)", async () => {
+    const list: ModelOption[] = Array.from({ length: 100 }, (_, i) => ({
+      id: `m${i}`,
+      providerID: "bulk",
+      name: `Bulk ${i}`,
+    }))
+    const p = await pickerWithLists(list, DEF)
+    p["model"] = undefined
+    const rows = (await p["modelOptions"]("", 0)) as any[]
+    expect(rows).toHaveLength(81)
+    expect(rows.slice(1).map((r) => r.label)).toEqual(list.slice(0, 80).map((m) => m.name))
   })
 })
 

@@ -4,12 +4,11 @@ import { defaultModel, modelLabel, models, serverDefault, setDefaultModel } from
 import type { ModelRef } from "../src/app/types"
 
 // models.ts is the canvas's model memory: the last-picked model persists under
-// `occ.model`, and the model lists are promise-cached at module level with a
-// reset-on-rejection so a failed fetch can be retried. Everything runs against
-// bare globals (localStorage) and module state, so the storage fake is installed
-// per test, and each cache contract lives in ONE test that owns its cache state
-// (the caches are module-level: once a test resolves them, no other test can
-// drive the rejection path).
+// `occ.model`, and the model lists are promise-cached per-backend (WeakMap)
+// with a reset-on-rejection so a failed fetch can be retried. Everything runs
+// against bare globals (localStorage), so the storage fake is installed per
+// test. Cache isolation is per-backend identity: each fakeBackend() is a
+// fresh key, so tests never need a reset seam and are order-independent.
 
 const KEY = "occ.model"
 
@@ -147,8 +146,15 @@ describe("models() promise cache", () => {
         return Promise.resolve([])
       },
     })
-    expect(models(other)).toBe(first) // a successful result is served forever
-    expect(calls).toBe(2)
+    // Per-backend isolation: a different Backend instance owns its own
+    // cache entry (demo/live backends must not share model lists).
+    const otherFirst = models(other)
+    expect(otherFirst).not.toBe(first)
+    await expect(otherFirst).resolves.toEqual([])
+    expect(calls).toBe(3)
+    expect(models(other)).toBe(otherFirst) // and is then cached for that backend
+    expect(models(good)).toBe(first) // the first backend still serves its own
+    expect(calls).toBe(3)
   })
 })
 
