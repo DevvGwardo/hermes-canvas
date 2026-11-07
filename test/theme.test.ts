@@ -173,17 +173,15 @@ describe("Hermes brand tokens in styles.css", () => {
 
   test("every brand font is declared and shipped", async () => {
     const text = await css();
-    for (const face of ["Collapse", "Rules Compressed", "Mondwest", "Neuebit", "Rules Expanded"]) {
+    for (const face of ["Inter", "Oswald", "DM Serif Display", "Courier Prime"]) {
       expect(text).toContain(`font-family: "${face}"`);
     }
     for (const file of [
-      "Collapse-Regular.woff2",
-      "Collapse-Bold.woff2",
-      "RulesCompressed-Regular.woff2",
-      "RulesCompressed-Medium.woff2",
-      "Mondwest-Regular.woff2",
-      "RulesExpanded-Bold.woff2",
-      "Neuebit-Bold.woff2",
+      "Inter-Variable.woff2",
+      "Oswald-Variable.woff2",
+      "DMSerifDisplay-Regular.woff2",
+      "CourierPrime-Regular.woff2",
+      "CourierPrime-Bold.woff2",
     ]) {
       const bytes = await Bun.file(new URL(`../assets/fonts/${file}`, import.meta.url)).arrayBuffer();
       expect(bytes.byteLength).toBeGreaterThan(1000);

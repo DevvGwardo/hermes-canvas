@@ -1,0 +1,57 @@
+Font Licenses — hermes-canvas
+==============================
+
+All font files in this directory are licensed under the SIL Open Font License,
+Version 1.1 (OFL). The OFL permits embedding (including @font-face self-hosting),
+redistribution, and use in this public repository. No CDN is used at runtime;
+the files below are self-hosted and the app stays offline/local.
+
+Bundled fonts (from Google Fonts, latin subset, woff2):
+
+  Inter-Variable.woff2
+    Family: Inter
+    Author: rsms (Rasmus Andersson)
+    Source: https://github.com/rsms/inter
+    License: OFL 1.1 (see OFL.txt)
+
+  Oswald-Variable.woff2
+    Family: Oswald
+    Author: Vernon Adams
+    Source: https://github.com/googlefonts/Oswald
+    License: OFL 1.1 (see OFL.txt)
+    Role: condensed display / uppercase brand chrome (replaces the former
+    commercial condensed face).
+
+  DMSerifDisplay-Regular.woff2
+    Family: DM Serif Display
+    Author: Colophon Foundry (Jonny Pinhorn)
+    Source: https://github.com/googlefonts/dm-font
+    License: OFL 1.1 (see OFL.txt)
+    Role: serif/display title and wordmark face.
+
+  CourierPrime-Regular.woff2, CourierPrime-Bold.woff2
+    Family: Courier Prime
+    Author: Alan Dye / Quote-Unquote
+    Source: https://github.com/googlefonts/Courier-Prime
+    License: OFL 1.1 (see OFL.txt)
+    Role: monospace (matches the --h-font-mono stack).
+
+Why these fonts?
+----------------
+The previously bundled faces (Blaze Type Collapse / Rules and Pangram Pangram
+PP Mondwest / PP Neue Bit) are commercial, paid fonts. Their foundry EULAs
+prohibit distributing or uploading the font binaries to a public repository
+(Blaze Type EULA: "sell, rent, sublicense, copy or distribute ... to any Third
+Party"; "shall not allow Third Parties to access the Product ... by offering
+it for download"; Pangram Pangram free-trial EULA §2.6: "Distributing copies
+... Uploading or downloading the Fonts on the internet or making it available
+publicly"). They were removed.
+
+The four OFL families above preserve the design roles:
+  --h-font          -> Inter (body/UI)
+  --h-font-display  -> Oswald (condensed uppercase chrome)
+  --h-font-title    -> DM Serif Display (titles)
+  --h-font-mono     -> Courier Prime (mono)
+
+The full OFL 1.1 text follows. Copyright and author notices are preserved in
+the font binaries' name tables.

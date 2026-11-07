@@ -2,64 +2,49 @@
    HERMES CANVAS — brand layer
    Palette, type and bevel language come from the real Hermes design system
    (@nous-research/ui): warm near-black ground #170d02, brand amber #ffac02,
-   cream ink #fff6e5, Collapse / Rules Compressed / Mondwest type, hard 1px
-   bevels instead of soft glass, and the animated arc-border stroke.
+   cream ink #fff6e5, Inter / Oswald / DM Serif Display / Courier Prime type,
+   hard 1px bevels instead of soft glass, and the animated arc-border stroke.
+   Type is OFL self-hosted (see assets/fonts/LICENSE) — no CDN at runtime.
    ========================================================================== */
 
 @font-face {
-  font-family: "Collapse";
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../../assets/fonts/Inter-Variable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Oswald";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("../../assets/fonts/Oswald-Variable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "DM Serif Display";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("../../assets/fonts/Collapse-Regular.woff2") format("woff2");
+  src: url("../../assets/fonts/DMSerifDisplay-Regular.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: "Collapse";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("../../assets/fonts/Collapse-Bold.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Rules Compressed";
+  font-family: "Courier Prime";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("../../assets/fonts/RulesCompressed-Regular.woff2") format("woff2");
+  src: url("../../assets/fonts/CourierPrime-Regular.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: "Rules Compressed";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("../../assets/fonts/RulesCompressed-Medium.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Rules Expanded";
+  font-family: "Courier Prime";
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url("../../assets/fonts/RulesExpanded-Bold.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Mondwest";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("../../assets/fonts/Mondwest-Regular.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Neuebit";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("../../assets/fonts/Neuebit-Bold.woff2") format("woff2");
+  src: url("../../assets/fonts/CourierPrime-Bold.woff2") format("woff2");
 }
 
 :root {
@@ -93,9 +78,9 @@
   --h-radius-lg: 4px;
   --h-radius-pill: 2px;
   /* Type */
-  --h-font: "Collapse", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --h-font-display: "Rules Compressed", "Collapse", system-ui, sans-serif;
-  --h-font-title: "Mondwest", "Collapse", system-ui, sans-serif;
+  --h-font: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --h-font-display: "Oswald", "Inter", system-ui, sans-serif;
+  --h-font-title: "DM Serif Display", "Inter", system-ui, serif;
   --h-font-mono: "Courier Prime", "Courier New", ui-monospace, Menlo, monospace;
 
   /* ---- the old "desk" scale, re-pointed at the Hermes palette ------------
@@ -240,8 +225,8 @@ button {
 }
 
 /* ---- Hermes brand primitives ----------------------------------------------
-   The DS's `text-display` utility: uppercase, wide tracking, in the compressed
-   Rules face. Used on chrome only (buttons, badges, section headings, labels) —
+   The DS's `text-display` utility: uppercase, wide tracking, in the condensed
+   Oswald face. Used on chrome only (buttons, badges, section headings, labels) —
    never on body copy. */
 
 .display,
@@ -259,7 +244,7 @@ button {
   letter-spacing: 0.09em;
 }
 
-/* Mondwest: the display face for the wordmark and page titles. */
+/* DM Serif Display: the display face for the wordmark and page titles. */
 .title-face {
   font-family: var(--h-font-title);
   font-weight: 400;

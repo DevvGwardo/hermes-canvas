@@ -224,6 +224,8 @@ When inspecting the canvas in your browser developer console, `hermesCanvas.stor
 
 This project is licensed under the [MIT License](LICENSE).
 
+Fonts in `assets/fonts/` are self-hosted under the SIL Open Font License 1.1 (Inter, Oswald, DM Serif Display, Courier Prime) — see [assets/fonts/LICENSE](assets/fonts/LICENSE) for per-file attribution. No CDN is used at runtime.
+
 ---
 
 Hermes Canvas is an independent project and is not affiliated with or endorsed by the Hermes or OpenCode teams. Canvas UI adapted from [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas) (MIT).
