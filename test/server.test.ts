@@ -189,7 +189,7 @@ describe("hermes api", () => {
     expect(res.status).toBe(200)
   })
 
-  test("create inserts a session row", async () => {
+  test("create mints a draft without touching state.db", async () => {
     const s = await j(
       await fetch(`${base}/api/hermes/session`, {
         method: "POST",
@@ -197,11 +197,13 @@ describe("hermes api", () => {
         body: JSON.stringify({ location: { directory: home } }),
       }),
     )
-    expect(s.id).toMatch(/_\w{8}$/)
+    expect(s.id).toMatch(/^canvas-draft-/)
     const db = new Database(join(home, "state.db"), { readonly: true })
-    const row = db.query("SELECT title, source FROM sessions WHERE id = ?").get(s.id) as any
+    const row = db.query("SELECT id FROM sessions WHERE id = ?").get(s.id)
     db.close()
-    expect(row).toMatchObject({ source: "canvas" })
+    expect(row).toBeNull()
+    const got = await j(await fetch(`${base}/api/hermes/session/${s.id}`))
+    expect(got.id).toBe(s.id)
   })
 
   test("rejects cross-site requests", async () => {

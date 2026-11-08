@@ -158,6 +158,16 @@ describe("Store — the session event switch", () => {
 
     fire("session.reasoning.started", { sessionID: "s1" })
     expect(store["activity"].get("s1")).toBe("Thinking…")
+    fire("session.reasoning.ended", { sessionID: "s1" })
+    expect(store["activity"].get("s1")).toBe("Working…")
+    fire("session.reasoning.started", { sessionID: "s1" })
+    expect(store["activity"].get("s1")).toBe("Thinking…")
+    fire("session.execution.succeeded", { sessionID: "s1" })
+    // A late reasoning delta must not resurrect "thinking" for a finished turn.
+    fire("session.reasoning.delta", { sessionID: "s1" })
+    expect(store.running.has("s1")).toBe(false)
+    expect(store["activity"].has("s1")).toBe(false)
+    fire("session.execution.started", { sessionID: "s1" })
     fire("session.compaction.started", { sessionID: "s1" })
     expect(store["activity"].get("s1")).toBe("Compacting context…")
     fire("session.retry.scheduled", { sessionID: "s1" })

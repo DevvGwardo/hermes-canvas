@@ -11,6 +11,7 @@
 //   HERMES_BIN   `hermes` executable (default: resolved from PATH)
 
 import { Database } from "bun:sqlite"
+import { randomUUID } from "node:crypto"
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
@@ -340,7 +341,7 @@ export function mapMessages(rows: MessageRow[], agent: string, model: { id: stri
       out.push({ type: "user", id: `hm_${r.id}`, time: { created: ts }, text: r.content ?? "" })
     } else if (r.role === "assistant") {
       const a = newAssistant(ts, r.id)
-      if (r.reasoning) a.content.push({ type: "reasoning", text: r.reasoning })
+      if (r.reasoning) a.content.push({ type: "reasoning", text: r.reasoning, time: { created: ts, completed: ts } })
       if (r.content) a.content.push({ type: "text", text: r.content })
       for (const tc of parseToolCalls(r.tool_calls)) {
         a.content.push({
@@ -409,6 +410,11 @@ export function listSessions(max: number, viewed: Map<string, number>, running: 
 }
 
 export function getSession(id: string, viewed: Map<string, number>, running: Set<string>): CanvasSession | undefined {
+  const draft = drafts.get(id)
+  if (draft) {
+    const s = getDraftSession(id)
+    if (s) return { ...s, time: { ...s.time, viewed: viewed.get(id) } }
+  }
   const db = openDb(true)
   try {
     const r = db.query(`SELECT ${SESSION_COLS} FROM sessions WHERE id = ?`).get(id) as SessionRow | null
@@ -632,28 +638,150 @@ export function setSessionModel(id: string, model: string): void {
   }
 }
 
-export function createSessionRow(directory: string, model?: string, title?: string): CanvasSession {
-  const rand = Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0")
-  const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, "0")
-  const id =
-    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +
-    `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}_${rand}`
-  const started = Date.now() / 1000
-  const db = new Database(dbPath())
-  try {
-    db.exec("PRAGMA busy_timeout = 5000")
-    db.query(
-      `INSERT INTO sessions (id, source, model, title, cwd, started_at, message_count, tool_call_count,
-        input_tokens, output_tokens, archived, created_source)
-       VALUES (?, 'canvas', ?, ?, ?, ?, 0, 0, 0, 0, 0, 'canvas')`,
-    ).run(id, model ?? "", title ?? null, directory || null, started)
-  } finally {
-    db.close()
+// ---------------------------------------------------------------------------
+// Draft sessions (no state.db row until Hermes mints the real one)
+// ---------------------------------------------------------------------------
+
+// New canvas sessions used to be a bare INSERT into state.db followed by
+// `hermes chat --resume <id>`. Current Hermes resolves --resume through the
+// gateway authority, which only restores rows carrying a gateway receipt
+// (`state_meta` gateway.local_policy.v1:<id>), a routed session_key, or an
+// api binding. A bare insert has none of those, so the child exits with
+// "No session found matching '<id>'" and the canvas shows a red Failed tile
+// with zero messages. Keep drafts in memory; the first prompt spawns
+// `hermes chat -q` without --resume so Hermes mints the real id + receipt.
+type Draft = { id: string; directory: string; model?: string; title?: string; created: number }
+const drafts = new Map<string, Draft>()
+
+export function isDraftSession(id: string): boolean {
+  return drafts.has(id)
+}
+
+export function getDraftSession(id: string): CanvasSession | undefined {
+  const d = drafts.get(id)
+  if (!d) return undefined
+  const dir = d.directory || homedir()
+  const model = parseModel(d.model ?? null, null)
+  return {
+    id: d.id,
+    projectID: projectIDFor(dir),
+    agent: "canvas",
+    model,
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: d.created, updated: d.created },
+    title: d.title,
+    location: { directory: dir },
+    permissions: null,
   }
-  const s = getSession(id, new Map(), new Set())
-  if (!s) throw new Error("session row was not created")
+}
+
+export function dropDraftSession(id: string): void {
+  drafts.delete(id)
+}
+
+export function ownProfileName(): string {
+  // Mirrors hermes SessionDB._own_profile_name for the default store.
+  try {
+    const p = dirname(dbPath())
+    const root = hermesHome()
+    if (p === root) return "default"
+    // <root>/profiles/<name>/state.db
+    const parts = p.split(/[/\\]/).filter(Boolean)
+    if (parts.length >= 2 && parts.at(-2) === "profiles") return parts.at(-1) || "default"
+  } catch { /* default below */ }
+  return "default"
+}
+
+// Backfill NULL profile_name rows. Hermes stamps every orchestrated row with
+// its owning profile; a NULL row reads as unowned to profile-keyed consumers
+// and is the shape of pre-owner-ladder canvas inserts. In the default store
+// the owner is "default"; inside profiles/<name>/state.db it is <name>.
+export function backfillProfileNames(): number {
+  try {
+    const db = openDb(false)
+    try {
+      const r = db.query("UPDATE sessions SET profile_name = ? WHERE profile_name IS NULL OR TRIM(profile_name) = ''").run(ownProfileName())
+      return r.changes
+    } finally {
+      db.close()
+    }
+  } catch {
+    return 0
+  }
+}
+
+const LOCAL_POLICY_PREFIX = "gateway.local_policy.v1:"
+
+// Does state.db carry a gateway receipt that makes `hermes chat --resume`
+// restorable? Without one the authority answers not_found no matter what the
+// bare sessions row says.
+export function hasGatewayReceipt(id: string): boolean {
+  try {
+    const db = openDb(true)
+    try {
+      const row = db.query("SELECT 1 FROM state_meta WHERE key = ? LIMIT 1").get(LOCAL_POLICY_PREFIX + id) as unknown
+      if (row) return true
+      const row2 = db.query("SELECT 1 FROM sessions WHERE id = ? AND (chat_id LIKE 'local-%' OR session_key IS NOT NULL) LIMIT 1").get(id) as unknown
+      return !!row2
+    } finally {
+      db.close()
+    }
+  } catch {
+    return false
+  }
+}
+
+// A pre-fix placeholder (bare canvas insert, no messages, no receipt) is
+// treated like a draft: its next prompt mints a real session and the row is
+// removed.
+export function isCanvasPlaceholder(id: string): boolean {
+  if (drafts.has(id)) return true
+  try {
+    const db = openDb(true)
+    try {
+      const row = db.query("SELECT source, message_count FROM sessions WHERE id = ?").get(id) as { source: string | null; message_count: number | null } | null
+      if (!row) return false
+      if ((row.source ?? "") !== "canvas") return false
+      if (Number(row.message_count ?? 0) > 0) return false
+      return !hasGatewayReceipt(id)
+    } finally {
+      db.close()
+    }
+  } catch {
+    return false
+  }
+}
+
+export function deletePlaceholderRow(id: string): void {
+  drafts.delete(id)
+  try {
+    const db = openDb(false)
+    try {
+      db.query("DELETE FROM sessions WHERE id = ? AND COALESCE(message_count,0) = 0 AND COALESCE(source,'') = 'canvas'").run(id)
+    } finally {
+      db.close()
+    }
+  } catch { /* best effort */ }
+}
+
+export function createDraftSession(directory: string, model?: string, title?: string): CanvasSession {
+  const id = `canvas-draft-${randomUUID()}`
+  const d: Draft = { id, directory: directory || homedir(), model, title, created: Date.now() }
+  drafts.set(id, d)
+  const s = getDraftSession(id)
+  if (!s) throw new Error("draft session was not created")
   return s
+}
+
+// Back-compat name: pre-gateway canvas flows called this a "row". It now
+// mints a draft; the real row is created by Hermes on first prompt.
+export function createSessionRow(directory: string, model?: string, title?: string): CanvasSession {
+  return createDraftSession(directory, model, title)
+}
+
+export function profileNameForDB(): string {
+  return ownProfileName()
 }
 
 // ---------------------------------------------------------------------------
@@ -691,6 +819,11 @@ export interface PromptHandle {
   proc: ReturnType<typeof Bun.spawn>
   assistantID: string
   startedAt: number
+  mode?: "create" | "resume"
+  cwd?: string
+  draftId?: string
+  realId?: string
+  onRealId?: (realId: string) => void
 }
 
 const runningProcs = new Map<string, PromptHandle>()
@@ -720,14 +853,22 @@ function winPath(p: string): string {
   return p
 }
 
+export type PromptMode = "create" | "resume"
+
 export async function startPrompt(
   id: string,
   text: string,
-  opts: { emit: (ev: CanvasEvent) => void; model?: string; cwd?: string },
+  opts: { emit: (ev: CanvasEvent) => void; model?: string; cwd?: string; mode?: PromptMode },
 ): Promise<void> {
   if (runningProcs.has(id)) throw new Error("session is already running")
+  // Drafts and receipt-less placeholders cannot resume through the gateway,
+  // so their first prompt creates a real session instead.
+  const mode: PromptMode = opts.mode ?? (isCanvasPlaceholder(id) ? "create" : "resume")
   const launcher = await resolveChatLauncher()
-  const argv = [...launcher.argv, "chat", "--resume", id, "-q", text, "--format", "stream-json"]
+  const argv =
+    mode === "resume"
+      ? [...launcher.argv, "chat", "--resume", id, "-q", text, "--format", "stream-json"]
+      : [...launcher.argv, "chat", "-q", text, "--format", "stream-json"]
   if (opts.model) argv.push("-m", opts.model)
   if (autoApproveAll || sessionYolo.has(id)) argv.push("--yolo")
   const cwd = opts.cwd ? winPath(opts.cwd) : winPath(hermesHome())
@@ -739,11 +880,51 @@ export async function startPrompt(
     env: { ...process.env, ...launcher.env, PWD: process.env.HERMES_CANVAS_PROMPT_CWD ?? cwd },
   })
   const aid = `live_${id}_${Date.now().toString(36)}`
-  const handle: PromptHandle = { sessionID: id, proc, assistantID: aid, startedAt: Date.now() }
+  const handle: PromptHandle = {
+    sessionID: id,
+    proc,
+    assistantID: aid,
+    startedAt: Date.now(),
+    mode,
+    cwd,
+    draftId: mode === "create" ? id : undefined,
+  }
+  if (mode === "create") {
+    handle.onRealId = (realId) => {
+      // Re-key the running handle so interrupt/execution views track the
+      // real id from now on.
+      runningProcs.delete(id)
+      runningProcs.set(realId, { ...handle, sessionID: realId })
+      // Emit session.created for the real row so the UI replaces the
+      // draft card. Fake hermes has no DB row; fall back to a minimal
+      // record shape (the store refetches via getSession).
+      const real = (() => {
+        try {
+          return getSession(realId, loadViewed(), runningSessionIDs())
+        } catch {
+          return undefined
+        }
+      })()
+      opts.emit({
+        id: uid("evt"),
+        type: "session.created",
+        created: Date.now(),
+        data: real
+          ? { sessionID: realId, draftId: id, parentID: real.parentID, projectID: real.projectID, agent: real.agent, model: real.model, title: real.title, location: real.location }
+          : { sessionID: realId, draftId: id },
+      })
+      opts.emit({ id: uid("evt"), type: "session.execution.started", created: Date.now(), data: { sessionID: realId } })
+      if (realId !== id) deletePlaceholderRow(id)
+    }
+  }
   runningProcs.set(id, handle)
   opts.emit({ id: uid("evt"), type: "session.execution.started", created: Date.now(), data: { sessionID: id } });
   void pumpPromptStream(handle, opts.emit).finally(() => {
-    if (runningProcs.get(id) === handle) runningProcs.delete(id)
+    const cur = runningProcs.get(handle.realId ?? id)
+    if (cur === handle || (handle.realId && runningProcs.get(handle.realId)?.startedAt === handle.startedAt)) {
+      runningProcs.delete(handle.realId ?? id)
+      runningProcs.delete(id)
+    }
   })
 }
 
@@ -753,14 +934,55 @@ async function pumpPromptStream(handle: PromptHandle, emit: (ev: CanvasEvent) =>
   let sawText = false
   let toolSeq = 0
   const toolIDs = new Map<string, string>()
-  const finish = (ok: boolean) => {
-    if (sawText) emit({ id: uid("evt"), type: "session.text.ended", created: now(), data: { sessionID: id, assistantMessageID: aid } })
-    emit({ id: uid("evt"), type: "session.step.ended", created: now(), data: { sessionID: id, assistantMessageID: aid } })
+  let stderrText = ""
+  let resultError = ""
+  let finished = false
+  const effId = () => handle.realId ?? id
+  const captureMinted = (realId: string) => {
+    if (!realId || handle.realId) return
+    handle.realId = realId
+    try {
+      handle.onRealId?.(realId)
+    } catch { /* ignore */ }
+  }
+  // Concurrent stderr capture: `hermes chat` prints `Session: <local-id>` on
+  // create before any text, and the failure reason on exit. The previous
+  // version discarded stderr entirely, so canvas reported a bare Failed
+  // with no actionable message.
+  const stderrPromise = (async () => {
+    if (!(proc.stderr instanceof ReadableStream)) return
+    const r = (proc.stderr as ReadableStream<Uint8Array>).getReader()
+    const dec = new TextDecoder()
+    try {
+      for (;;) {
+        const { done, value } = await r.read()
+        if (done) break
+        const chunk = dec.decode(value, { stream: true })
+        stderrText += chunk
+        if (handle.mode === "create" && !handle.realId) {
+          const m = stderrText.match(/Session:\s+(\S+)/)
+          if (m) captureMinted(m[1])
+        }
+        if (stderrText.length > 32_000) stderrText = stderrText.slice(-16_000)
+      }
+    } catch { /* ignore */ }
+    try { r.releaseLock() } catch { /* ignore */ }
+  })()
+  const finish = (ok: boolean, error?: string) => {
+    if (finished) return
+    finished = true
+    const err = (error ?? resultError ?? "").trim() || (stderrText.trim() && !ok ? stderrText.trim().slice(-4000) : "")
+    if (sawText) emit({ id: uid("evt"), type: "session.text.ended", created: now(), data: { sessionID: effId(), assistantMessageID: aid } })
+    emit({ id: uid("evt"), type: "session.step.ended", created: now(), data: { sessionID: effId(), assistantMessageID: aid } })
+    const data: any = { sessionID: effId() }
+    if (err) data.error = err
+    if (handle.realId && handle.realId !== id) data.realId = handle.realId
+    if (handle.draftId && handle.realId && handle.realId !== handle.draftId) data.draftId = handle.draftId
     emit({
       id: uid("evt"),
       type: ok ? "session.execution.succeeded" : "session.execution.failed",
       created: now(),
-      data: { sessionID: id },
+      data,
     })
   }
   try {
@@ -782,48 +1004,69 @@ async function pumpPromptStream(handle: PromptHandle, emit: (ev: CanvasEvent) =>
         } catch {
           continue
         }
+        // stream-json result carries the minted id (fake hermes, and real
+        // hermes when the stderr line arrived late).
+        if (msg.type === "result" && typeof msg.session_id === "string" && msg.session_id && handle.mode === "create") {
+          captureMinted(msg.session_id)
+        }
         if (msg.type === "text" && typeof msg.text === "string" && msg.text) {
           if (!sawText) {
             sawText = true
-            emit({ id: uid("evt"), type: "session.text.started", created: now(), data: { sessionID: id, assistantMessageID: aid, ordinal: 0 } })
+            emit({ id: uid("evt"), type: "session.text.started", created: now(), data: { sessionID: effId(), assistantMessageID: aid, ordinal: 0 } })
           }
-          emit({ id: uid("evt"), type: "session.text.delta", created: now(), data: { sessionID: id, assistantMessageID: aid, ordinal: 0, delta: msg.text } })
+          emit({ id: uid("evt"), type: "session.text.delta", created: now(), data: { sessionID: effId(), assistantMessageID: aid, ordinal: 0, delta: msg.text } })
         } else if (msg.type === "tool_use") {
           const tid = String(msg.tool_call_id ?? `live_${toolSeq++}`)
           toolIDs.set(String(msg.tool_call_id ?? msg.name), tid)
-          emit({ id: uid("evt"), type: "session.tool.input.started", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, name: String(msg.name ?? "tool") } })
-          emit({ id: uid("evt"), type: "session.tool.called", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, input: msg.input, executed: true } })
+          emit({ id: uid("evt"), type: "session.tool.input.started", created: now(), data: { sessionID: effId(), assistantMessageID: aid, id: tid, name: String(msg.name ?? "tool") } })
+          emit({ id: uid("evt"), type: "session.tool.called", created: now(), data: { sessionID: effId(), assistantMessageID: aid, id: tid, input: msg.input, executed: true } })
         } else if (msg.type === "tool_result") {
           const tid = toolIDs.get(String(msg.tool_call_id ?? msg.name)) ?? String(msg.tool_call_id ?? `live_${toolSeq++}`)
           const out = String(msg.output ?? "")
           if (msg.is_error) {
-            emit({ id: uid("evt"), type: "session.tool.failed", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, error: out.slice(0, 2000) } })
+            emit({ id: uid("evt"), type: "session.tool.failed", created: now(), data: { sessionID: effId(), assistantMessageID: aid, id: tid, error: out.slice(0, 2000) } })
           } else {
-            emit({ id: uid("evt"), type: "session.tool.success", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, content: [{ type: "text", text: capText(out) }], executed: true } })
+            emit({ id: uid("evt"), type: "session.tool.success", created: now(), data: { sessionID: effId(), assistantMessageID: aid, id: tid, content: [{ type: "text", text: capText(out) }], executed: true } })
           }
         } else if (msg.type === "result") {
-          finish((msg.exit_code ?? 0) === 0 && !msg.error)
-          // Drain stderr, wait for exit, stop reading stdout.
+          if (msg.error) resultError = String(msg.error)
+          const ok = (msg.exit_code ?? 0) === 0 && !msg.error
+          // Stop reading stdout; stderr drains in its own task.
           try { reader.cancel() } catch { /* ignore */ }
           await proc.exited
-          try {
-            if (proc.stderr instanceof ReadableStream) await new Response(proc.stderr).text()
-          } catch { /* ignore */ }
+          await stderrPromise.catch(() => {})
+          // If stdout closed without a result frame (e.g. gateway not_found
+          // prints result with exit_code 1 but no text), surface the
+          // stderr tail as the failure reason.
+          if (!ok) {
+            const tail = stderrText.trim()
+            finish(false, resultError || (tail ? tail.slice(-4000) : "hermes chat exited with code " + (msg.exit_code ?? 1)))
+          } else {
+            finish(true)
+          }
           return
         }
       }
     }
-    await proc.exited;
-    finish((proc.exitCode ?? 1) === 0)
+    await proc.exited
+    await stderrPromise.catch(() => {})
+    if ((proc.exitCode ?? 1) !== 0) {
+      const tail = stderrText.trim()
+      finish(false, resultError || (tail ? tail.slice(-4000) : `hermes chat exited with code ${proc.exitCode ?? 1}`))
+    } else {
+      finish(true)
+    }
   } catch {
     try { proc.kill() } catch { /* ignore */ }
     await proc.exited.catch(() => {})
-    finish(false)
+    await stderrPromise.catch(() => {})
+    const tail = stderrText.trim()
+    finish(false, resultError || (tail ? tail.slice(-4000) : "prompt pump interrupted"))
   }
 }
 
 export function interruptSession(id: string): boolean {
-  const h = runningProcs.get(id)
+  const h = runningProcs.get(id) ?? [...runningProcs.values()].find((x) => x.draftId === id || x.realId === id)
   if (!h) return false
   try {
     h.proc.kill()
@@ -831,6 +1074,8 @@ export function interruptSession(id: string): boolean {
     return false
   }
   runningProcs.delete(id)
+  if (h.realId) runningProcs.delete(h.realId)
+  runningProcs.delete(h.sessionID)
   return true
 }
 

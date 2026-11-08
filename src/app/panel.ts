@@ -123,6 +123,15 @@ export class SessionPanel {
       cards: (ids) => {
         if (this.id && ids.has(this.id)) this.renderHeader()
       },
+      event: (ev) => {
+        const d: any = ev.data ?? {}
+        if (ev.type === "session.created" && d.draftId && this.id === d.draftId && d.sessionID && d.sessionID !== d.draftId) {
+          this.open(d.sessionID)
+        }
+        if (ev.type === "session.execution.failed" && this.id && d.sessionID === this.id && d.error) {
+          toast(`Failed: ${String(d.error).slice(-280)}`)
+        }
+      },
     })
     window.addEventListener("resize", () => {
       if (this.id && !this.closing) this.applyGeometry(this.targetRect(), false)

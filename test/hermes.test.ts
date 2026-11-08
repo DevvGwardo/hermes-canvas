@@ -114,6 +114,11 @@ describe("hermes row mapping", () => {
     expect(mapMessages([row("tool_calls") as any], "cli", opts)[0].finish).toBeUndefined()
     const withReasoning = mapMessages([row("length", "why") as any], "cli", opts)
     expect(withReasoning[0].content.map((p: any) => p.type)).toEqual(["reasoning", "text"])
+    // Persisted reasoning is finished: completed must be set, or the
+    // transcript renders a perpetual "Thinking…" spinner (it computes
+    // running = !completed).
+    const reasoningPart = withReasoning[0].content[0] as any
+    expect(reasoningPart.time?.completed).toBe(2000)
   })
 
   test("orphan tool rows wrap themselves with fallback id and name", () => {

@@ -5,6 +5,7 @@
 import index from "../app/index.html"
 import { homedir } from "node:os"
 import {
+  backfillProfileNames,
   createSessionRow,
   dbPath,
   defaultModel,
@@ -57,6 +58,7 @@ export async function startServer(opts: ServerOptions) {
   }
   let dbError: string | undefined
   try {
+    backfillProfileNames()
     listSessions(1, viewed, new Set())
   } catch (e) {
     dbError = (e as Error).message

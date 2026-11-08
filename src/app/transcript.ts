@@ -229,6 +229,11 @@ export class Transcript {
       case "session.reasoning.delta":
         this.nthPart(this.assistant(d.assistantMessageID), "reasoning", d.ordinal ?? 0).text += d.delta ?? ""
         break
+      case "session.reasoning.ended": {
+        const part = this.nthPart(this.assistant(d.assistantMessageID), "reasoning", d.ordinal ?? 0) as { type: "reasoning"; text: string; time?: { created: number; completed?: number } }
+        part.time = { created: part.time?.created ?? Date.now(), completed: Date.now() }
+        break
+      }
       case "session.tool.input.started":
         this.toolPart(this.assistant(d.assistantMessageID), d.id, d.name)
         break
@@ -250,6 +255,16 @@ export class Transcript {
       case "session.execution.succeeded":
       case "session.execution.failed":
       case "session.execution.interrupted":
+        for (const m of this.messages) {
+          if (m.type !== "assistant") continue
+          m.time = { ...m.time, completed: m.time.completed ?? Date.now() }
+          for (const p of m.content) {
+            if (p.type === "reasoning" && !p.time?.completed) p.time = { created: p.time?.created ?? Date.now(), completed: Date.now() }
+            if (p.type === "tool" && (p.state.status === "running" || p.state.status === "streaming")) {
+              p.state = { ...p.state, status: "completed", input: p.state.input } as any
+            }
+          }
+        }
         this.opts.onFinished?.()
         this.scheduleRefetch(300)
         break
@@ -314,7 +329,7 @@ export class Transcript {
               out.push({ kind: "text", key, text: p.text })
             } else if (p.type === "reasoning") {
               if (!p.text.trim() && p.time?.completed) return
-              activity(key).items.push({ kind: "reasoning", key, text: p.text, running: !p.time?.completed && !m.time.completed })
+              activity(key).items.push({ kind: "reasoning", key, text: p.text, running: !p.time?.completed && !m.time.completed && this.store.running.has(this.id ?? "") })
             } else {
               activity(key).items.push({
                 kind: "tool",

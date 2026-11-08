@@ -82,6 +82,44 @@ describe("startPrompt stream branches", () => {
     process.env.HERMES_FAKE_MODE = "fast"
   })
 
+  test("create mode spawns without --resume and emits session.created for the minted id", async () => {
+    process.env.HERMES_FAKE_MODE = "create"
+    const { createDraftSession } = await import("../src/server/hermes")
+    const draft = createDraftSession("/repo/draft")
+    const events: CanvasEvent[] = []
+    await startPrompt(draft.id, "hello create", { emit: (ev) => events.push(ev) })
+    for (let i = 0; i < 100; i++) {
+      if (events.some((e) => e.type === "session.execution.succeeded" || e.type === "session.execution.failed")) break
+      await Bun.sleep(50)
+    }
+    for (let i = 0; i < 50 && runningSessionIDs().has(draft.id); i++) await Bun.sleep(50)
+    const types = events.map((e) => e.type)
+    expect(types).toContain("session.created")
+    const created = events.find((e) => e.type === "session.created")!
+    expect(created.data.sessionID).toBe("local-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    expect(created.data.draftId).toBe(draft.id)
+    expect(types).toContain("session.execution.succeeded")
+    // Subsequent streaming events ride the real id, not the draft.
+    const delta = events.find((e) => e.type === "session.text.delta")
+    expect(delta?.data.sessionID).toBe("local-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    process.env.HERMES_FAKE_MODE = "fast"
+  })
+
+  test("failed execution surfaces stderr error text", async () => {
+    process.env.HERMES_FAKE_MODE = "notfound"
+    const events: CanvasEvent[] = []
+    await startPrompt("ses_new_1", "hello", { emit: (ev) => events.push(ev) })
+    for (let i = 0; i < 100; i++) {
+      if (events.some((e) => e.type === "session.execution.succeeded" || e.type === "session.execution.failed")) break
+      await Bun.sleep(50)
+    }
+    for (let i = 0; i < 50 && runningSessionIDs().has("ses_new_1"); i++) await Bun.sleep(50)
+    const failed = events.find((e) => e.type === "session.execution.failed")!
+    expect(failed).toBeTruthy()
+    expect(String(failed.data.error ?? "")).toContain("No session found matching")
+    process.env.HERMES_FAKE_MODE = "fast"
+  })
+
   test("a throwing emit kills the prompt and finishes failed (pump catch)", async () => {
     process.env.HERMES_FAKE_MODE = "fast"
     const events: CanvasEvent[] = []

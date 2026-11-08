@@ -172,7 +172,7 @@ describe("against the real server", () => {
 
   test("createSession posts location and returns the new id", async () => {
     const s = await backend.createSession(home)
-    expect(s.id).toMatch(/_\w{8}$/)
+    expect(s.id).toMatch(/^canvas-draft-/)
     expect(s.location.directory).toBe(home)
     expect(last()).toMatchObject({ url: "/api/hermes/session", method: "POST" })
     expect(last().body).toEqual({ location: { directory: home } })

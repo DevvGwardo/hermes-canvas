@@ -476,6 +476,12 @@ export class Store {
     const id: string | undefined = d.sessionID
     switch (ev.type) {
       case "session.created": {
+        // Draft → real handoff: the first prompt on a draft mints a Hermes
+        // session; drop the draft card when its real twin arrives.
+        if (d.draftId && d.sessionID && d.draftId !== d.sessionID) {
+          this.sessions.delete(d.draftId)
+          this.running.delete(d.draftId)
+        }
         const s: Session = {
           id: d.sessionID,
           parentID: d.parentID,
@@ -532,7 +538,10 @@ export class Store {
         this.running.add(id)
         this.activity.set(id, "Working…")
         this.liveText.delete(id)
-        this.patch(id, (s) => (s.time.updated = ev.created ?? Date.now()), false)
+        this.patch(id, (s) => {
+          s.time.updated = ev.created ?? Date.now()
+          delete s.outcome
+        }, false)
         this.markStructure()
         break
       case "session.execution.succeeded":
@@ -553,6 +562,12 @@ export class Store {
         this.refreshPreviewSoon(id, 250)
         break
       case "session.reasoning.started":
+        this.setActivity(id, "Thinking…")
+        break
+      case "session.reasoning.ended":
+        this.setActivity(id, "Working…")
+        break
+      case "session.reasoning.delta":
         this.setActivity(id, "Thinking…")
         break
       case "session.text.started":
@@ -645,6 +660,11 @@ export class Store {
 
   private setActivity(id: string | undefined, label: string) {
     if (!id) return
+    // Do not resurrect a finished session from a late activity event:
+    // once execution has landed (outcome set) and the turn is no longer
+    // marked running, ignore stray deltas.
+    const s = this.sessions.get(id)
+    if (!this.running.has(id) && s?.outcome) return
     if (!this.running.has(id)) this.running.add(id)
     if (this.activity.get(id) === label) return
     this.activity.set(id, label)
