@@ -268,6 +268,7 @@ export async function startServer(opts: ServerOptions) {
           version: opts.demo ? undefined : "hermes",
           upstream: dbPath(),
           home: hermesHome(),
+          userHome: homedir(),
           error: dbError,
         })
       },

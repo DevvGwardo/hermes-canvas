@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { writeFileSync } from "node:fs"
+import { homedir } from "node:os"
 import { join } from "node:path"
 import { makeHermesHome } from "./helpers"
 import { startServer } from "../src/server/server"
@@ -25,6 +26,7 @@ describe("hermes api", () => {
   test("config reports the hermes backend without secrets", async () => {
     const cfg = await j(await fetch(`${base}/canvas/config`))
     expect(cfg).toMatchObject({ mode: "live", backend: "hermes", connected: true })
+    expect(cfg.userHome).toBe(homedir())
     expect(JSON.stringify(cfg)).not.toContain("secret")
   })
 

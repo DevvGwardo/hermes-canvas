@@ -4190,3 +4190,388 @@ button {
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
+
+/* ---- launchpad -------------------------------------------------------------
+   One task box for launching independent sessions. Team mode asks Hermes to
+   fan the work out through its native delegate_task tool. */
+
+.launchpad {
+  position: fixed;
+  left: 50%;
+  bottom: 60px;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: min(760px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    visibility 0.18s;
+}
+
+.panel-open .launchpad,
+.tiles-open .launchpad {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+}
+
+.launch-feed {
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  gap: 6px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 2px 2px 0;
+  scrollbar-width: none;
+}
+
+.launch-feed[hidden] {
+  display: none;
+}
+
+.launch-feed::-webkit-scrollbar {
+  display: none;
+}
+
+.launch-mission {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 270px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--h-hairline);
+  background: rgba(23, 13, 2, 0.82);
+  color: var(--text-3);
+  box-shadow: var(--h-bevel);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.launch-mission:hover {
+  color: var(--h-cream);
+  border-color: var(--h-hairline-strong);
+}
+
+.lm-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-4);
+}
+
+.launch-mission[data-status="working"] .lm-dot {
+  background: var(--h-success);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.7);
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+.launch-mission[data-status="review"] .lm-dot {
+  background: var(--h-amber);
+  box-shadow: 0 0 8px rgba(255, 172, 2, 0.6);
+}
+
+.launch-mission[data-status="failed"] .lm-dot {
+  background: var(--h-danger);
+}
+
+.launch-mission[data-status="needs-you"] .lm-dot {
+  background: var(--h-warning);
+}
+
+.lm-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+}
+
+.lm-meta {
+  flex: none;
+  font-family: var(--h-font-mono);
+  font-size: 10px;
+  color: var(--h-amber);
+  opacity: 0.75;
+}
+
+.launch-box {
+  display: flex;
+  flex-direction: column;
+  background: rgba(30, 18, 4, 0.94);
+  border: 1px solid var(--h-hairline-strong);
+  box-shadow: var(--h-bevel), var(--h-shadow-pop);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.launch-box:focus-within {
+  border-color: var(--h-hairline-hard);
+  box-shadow:
+    var(--h-bevel),
+    var(--h-shadow-pop),
+    0 0 0 1px rgba(255, 172, 2, 0.25);
+}
+
+.launch-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px 0 9px;
+}
+
+.launch-spacer {
+  flex: 1;
+}
+
+.launch-dest,
+.launch-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 23px;
+  padding: 0 8px;
+  border: 1px solid var(--h-hairline);
+  color: var(--text-3);
+  background: var(--h-bg-inset);
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.launch-dest {
+  min-width: 0;
+  max-width: 260px;
+}
+
+.launch-dest:hover,
+.launch-mode:hover {
+  color: var(--h-cream);
+  border-color: var(--h-hairline-strong);
+}
+
+.launch-dest .ld-mark {
+  color: var(--h-amber);
+  font-size: 9px;
+  letter-spacing: 0;
+}
+
+.launch-dest .ld-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.launch-dest .ld-caret {
+  color: var(--text-4);
+  font-size: 9px;
+  letter-spacing: 0;
+}
+
+.launch-mode.on {
+  color: var(--h-bg-base);
+  background: var(--h-amber);
+  border-color: var(--h-amber);
+  box-shadow: var(--h-bevel-lit);
+}
+
+.launch-mode.on:hover {
+  color: var(--h-bg-base);
+  background: var(--h-amber-bright);
+  border-color: var(--h-amber-bright);
+}
+
+.launch-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 3px 8px 8px 11px;
+}
+
+.launch-input {
+  flex: 1;
+  min-height: 26px;
+  max-height: 160px;
+  resize: none;
+  background: none;
+  border: 0;
+  outline: 0;
+  padding: 2px 0;
+  color: var(--h-cream);
+  font: 14.5px/1.55 var(--h-font);
+}
+
+.launch-input::placeholder {
+  color: var(--text-3);
+}
+
+.launch-send {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: var(--h-amber);
+  border: 1px solid var(--h-amber);
+  color: var(--h-bg-base);
+  font-family: var(--h-font-display);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: var(--h-bevel-lit);
+}
+
+.launch-send:hover {
+  background: var(--h-amber-bright);
+  border-color: var(--h-amber-bright);
+}
+
+.launch-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.launch-note {
+  text-align: center;
+  font-family: var(--h-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--text-4);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Destination menu (opens above the box). */
+
+.launch-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: min(380px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  background: var(--h-bg-panel);
+  border: 1px solid var(--h-hairline-strong);
+  box-shadow: var(--h-bevel), var(--h-shadow-modal);
+  overflow: hidden;
+}
+
+.launch-menu-input {
+  height: 36px;
+  padding: 0 12px;
+  background: var(--h-bg-inset);
+  border: 0;
+  border-bottom: 1px solid var(--h-hairline);
+  outline: 0;
+  color: var(--h-cream);
+  font: 13px var(--h-font);
+}
+
+.launch-menu-input.bad::placeholder {
+  color: var(--h-danger);
+}
+
+.launch-menu-list {
+  max-height: min(288px, 50vh);
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.launch-menu-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-areas:
+    "mark label"
+    "mark sub";
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  text-align: left;
+  color: var(--text-2);
+}
+
+.launch-menu-item:hover,
+.launch-menu-item.active {
+  background: var(--h-wash-strong);
+  color: var(--h-cream);
+}
+
+.launch-menu-item .lmi-mark {
+  grid-area: mark;
+  color: var(--h-amber);
+  font-family: var(--h-font-mono);
+  font-size: 10px;
+  text-align: center;
+}
+
+.launch-menu-item .lmi-label {
+  grid-area: label;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.launch-menu-item .lmi-sub {
+  grid-area: sub;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--h-font-mono);
+  font-size: 10px;
+  color: var(--text-4);
+}
+
+.launch-menu-item.custom .lmi-label {
+  color: var(--h-amber);
+}
+
+.launch-menu-empty {
+  padding: 14px 10px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.launch-dest:focus-visible,
+.launch-mode:focus-visible,
+.launch-send:focus-visible,
+.launch-mission:focus-visible,
+.launch-menu-item:focus-visible {
+  outline: 2px solid var(--desk-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .launchpad {
+    bottom: 54px;
+  }
+
+  .launch-dest {
+    max-width: 150px;
+  }
+
+  .launch-note {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launchpad,
+  .launch-mission[data-status="working"] .lm-dot {
+    transition: none;
+    animation: none;
+  }
+}

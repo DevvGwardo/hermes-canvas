@@ -7,6 +7,7 @@ import { LAYOUTS, type LayoutName } from "./layouts"
 import { defaultModel } from "./models"
 import { SessionPanel } from "./panel"
 import { NewSessionPicker } from "./picker"
+import { Launchpad } from "./launchpad"
 import { TilesView } from "./tiles"
 import { autoApproveToggle, autoApprovedNotices } from "./approve"
 import pipMark from "../../assets/pip.svg"
@@ -21,6 +22,8 @@ interface CanvasConfig {
   version?: string
   upstream?: string
   home?: string
+  /** The OS user's home, for expanding and shortening `~` in paths. */
+  userHome?: string
   error?: string
 }
 
@@ -147,9 +150,11 @@ async function boot() {
   root.dataset.layout = layoutName
 
   let panel: SessionPanel
+  let launchpad: Launchpad | undefined
   const canvas = new CanvasView(root, store, {
     open: (id) => openSession(id),
     newSession: (group) => void newSession(group),
+    selectionChanged: () => launchpad?.refreshDestination(),
   })
   canvas.setLayout(layoutName)
   root.dataset.layout = layoutName
@@ -203,11 +208,24 @@ async function boot() {
     updateStats()
   }
 
-  const picker = new NewSessionPicker(root, store, backend, demo ? "/Users/you" : cfg.home, createIn)
+  const userHome = demo ? "/Users/you" : (cfg.userHome ?? cfg.home)
+  const picker = new NewSessionPicker(root, store, backend, userHome, createIn)
   const openPicker = () => {
     const sel = canvas.selected ? store.sessions.get(canvas.selected) : undefined
     picker.open(sel?.location.directory)
   }
+
+  // One chat box for launching independent sessions (and, in Team mode,
+  // their native Hermes subagent teams) without opening the picker.
+  launchpad = new Launchpad(root, store, backend, {
+    home: userHome,
+    selectedDirectory: () => {
+      const sel = canvas.selected ? store.sessions.get(canvas.selected) : undefined
+      return sel?.location.directory
+    },
+    openSession: (id) => openSession(id),
+  })
+  ;(window as any).hermesCanvas = { canvas, store, launchpad }
 
   // ---- chrome ----
 
@@ -421,6 +439,7 @@ async function boot() {
         <dt>1 – 4</dt><dd>Satellites, Fold, Tabs, Tree</dd>
         <dt>0 · double-click</dt><dd>Fit everything</dd>
         <dt>N</dt><dd>New session: pick a project or type a folder path</dd>
+        <dt>L</dt><dd>Launch a task: type a prompt in the chat box, Enter starts it</dd>
         <dt>T</dt><dd>Tiles: every running session's chat side by side</dd>
         <dt>] · [</dt><dd>Next / previous session that needs you, then to review, then working</dd>
       </dl>
@@ -439,6 +458,13 @@ async function boot() {
         <dt>Tab</dt><dd>Queue for after the current turn</dd>
         <dt>⇧ Enter</dt><dd>New line</dd>
         <dt>⌘ .</dt><dd>Stop</dd>
+      </dl>
+      <h2>Launchpad</h2>
+      <dl>
+        <dt>L</dt><dd>Jump to the task box</dd>
+        <dt>Enter</dt><dd>Launch a new session; each launch is independent</dd>
+        <dt>Team · Solo</dt><dd>Team asks Hermes to split the task across subagents</dd>
+        <dt>@project</dt><dd>Start this task at that project (e.g. @hermes-canvas fix tests)</dd>
       </dl>`
     helpEl.addEventListener("click", () => toggleHelp())
     root.append(helpEl)
@@ -533,6 +559,10 @@ async function boot() {
     if (e.key === "n" || e.key === "N") {
       e.preventDefault()
       return openPicker()
+    }
+    if (e.key === "l" || e.key === "L") {
+      e.preventDefault()
+      return launchpad?.focus()
     }
     if (e.key === "?") return toggleHelp()
     // Jump between sessions that want attention: needs you, then review, then working.

@@ -130,6 +130,8 @@ describe("basename and truncate", () => {
     expect(basename("/home/u/app.ts")).toBe("app.ts")
     expect(basename("a/b///")).toBe("b")
     expect(basename("/")).toBe("/") // last part empty -> falls back to the raw path
+    expect(basename("C:\\Users\\torre\\repo")).toBe("repo")
+    expect(basename("C:\\Users\\torre\\repo\\\\")).toBe("repo")
   })
 
   test("truncate collapses whitespace and keeps room for the ellipsis", () => {

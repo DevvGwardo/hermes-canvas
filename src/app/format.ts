@@ -4,7 +4,7 @@ import type { AssistantPart, ToolState } from "./types"
 
 export function basename(p?: string | null): string {
   if (!p) return ""
-  const parts = p.replace(/\/+$/, "").split("/")
+  const parts = p.replace(/[\\/]+$/, "").split(/[\\/]/)
   return parts[parts.length - 1] || p
 }
 

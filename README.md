@@ -17,7 +17,7 @@ It is a port of [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas)
 - **Dynamic layouts**: Switch between Satellites, Fold, Tabs, and Tree layouts on the fly.
 - **Global search**: Press `/`, `Command+K`, or start typing anywhere to search across titles, project names, loaded previews, and session history (SQLite FTS). Cards reflow with motion blur.
 - **Performance**: DOM-based cards inside a single GPU-composited world layer, lazy preview loading for visible cards (4 concurrent requests), and viewport culling.
-- **Session creation**: Start new sessions from the global picker (`N`) with path autocompletion and model selection, or use the "+ New session" card at the end of each project.
+- **Session creation**: Start new sessions from the global picker (`N`) with path autocompletion and model selection, type a task in the launchpad (`L`), or use the "+ New session" card at the end of each project.
 
 ### Status at a glance
 - **Edge color indicator**: A 3-pixel status line along the top card edge remains visible at all zoom levels, reinforced by border color and background tint.
@@ -41,6 +41,18 @@ It is a port of [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas)
 - **Integrated controls**: Each tile features an independent composer (`Enter` to steer, `Tab` to queue) — steering spawns `hermes chat --resume <id>` and streams back `stream-json` events.
 - **Session lifecycle**: Finished tiles remain marked until viewed or dismissed; hover to pin idle sessions, maximize a tile, or navigate to it on the canvas.
 - **Subagent visibility**: Hermes sessions with `parent_session_id` nest as child cards, like OpenCode subagents.
+
+### Launchpad
+
+- **One box to start work**: the task box at the bottom of the canvas launches a session straight from a prompt — no picker, no opening a card first.
+- **Team mode**: by default each launch creates a lead session that uses Hermes' native `delegate_task` tool to split the task across subagents. Their child sessions appear as nested cards, exactly like any other Hermes delegation.
+- **Independent launches**: every prompt is a fresh root session, so a second task starts its own team without steering, queueing into, or otherwise touching the first.
+- **Destination at a glance**: the launch uses the selected card's project (or the most recent project when nothing is selected) by default. Click the project chip to choose another project, type a folder, or pick **Follow selection** to track the canvas selection again; you can also prefix the task with `@project` (for example `@hermes-canvas fix the flaky layout test`).
+- **Solo mode**: turn Team off when you want one session and no subagents.
+- **Model**: launches use the model remembered by the New session picker; choose a different one there and it becomes the default for the next launch.
+- **Live strip**: recent launches sit above the box with their status and subagent count; click one to open its card.
+- **Depth and approvals**: team launches use Hermes' `delegation` settings. `max_spawn_depth` defaults to 1 (lead → workers); raise it if workers should spawn their own workers. Commands that need approval still follow Hermes' approval settings, so turn on Auto-approve for unattended teams that use dangerous commands.
+- **Demo mode**: simulated; launches work, but no real subagents are spawned.
 
 ### Sessions
 
@@ -125,6 +137,7 @@ You can also append `?demo=1` to the URL at any time.
 | `Esc` | Step back one level, close panel/picker/tiles, or clear filter/search |
 | `/` or `Command+K` or type | Focus global search |
 | `N` | Open new session picker (preselects focused card's project) |
+| `L` | Focus the launchpad task box |
 | `T` | Toggle Tiles view |
 | `1` – `4` | Switch layout (`1` Satellites, `2` Fold, `3` Tabs, `4` Tree) |
 | `]` / `[` | Jump to next / previous session needing attention |
@@ -189,11 +202,13 @@ browser ──/api/hermes/*──▶ hermes-canvas (Bun) ──SQLite──▶ <
 - **Store** (`src/app/store.ts`, unchanged): Loads the most recent 600 sessions, active sessions, and project lists on boot; tracks real-time updates through the event feed. Card previews load lazily for visible cards (4 at a time).
 - **Canvas** (`src/app/canvas.ts`, `camera.ts`, `layouts.ts`, unchanged): Renders DOM cards inside a transformed world layer. Layouts are computed as pure functions, movements follow critically damped springs, off-screen cards are culled.
 - **Transcript** (`src/app/transcript.ts`, unchanged): Shared by the open-session panel (`panel.ts`) and every tile (`tiles.ts`). Applies streaming events directly to the transcript and reconciles with `GET /message` after each step.
+- **Launchpad** (`src/app/launchpad.ts`): Creates a session row and prompts it through the same server path as any other canvas prompt. Team launches only add orchestration instructions to that prompt; the actual fan-out is Hermes' native `delegate_task` tool, so the canvas keeps its single source of truth (`state.db`) and needs no separate dispatcher.
 - **Backend** (`src/app/hermes-backend.ts`): Implements the `Backend` interface (shared with the demo backend) against `/api/hermes/*`. Permission/inbox/form queues read empty (Hermes approvals happen inside the agent turn); allow-everything maps to `--yolo` on spawned prompts.
 
 ### Hermes concepts used
 
 - `state.db`: `sessions` (id, source, model, title, cwd, git_repo_root, parent_session_id, tokens, cost, ended_at/end_reason, archived/hidden) and `messages` (role, content, tool_calls JSON, tool_call_id/tool_name, reasoning, timestamp).
+- `delegate_task`: Hermes' native subagent tool. Team launches ask the lead session to use it; each child session is written with `parent_session_id`, so the canvas nests it automatically.
 - `hermes sessions rename` for renames; `hermes chat --resume <id> -q … --format stream-json [-m model] [--yolo]` for prompts.
 - Model list: distinct session models plus `custom_providers` models from `config.yaml`; default from `model.default`.
 - `canvas_viewed.json` sidecar for read state (Hermes' own `last_read_at` is never written).
@@ -218,7 +233,7 @@ bun test           # Run test suite (isolated temp Hermes home + fake hermes CLI
 bun run typecheck  # Run TypeScript type checker
 ```
 
-When inspecting the canvas in your browser developer console, `hermesCanvas.store` and `hermesCanvas.canvas` are available as live objects on the global scope.
+When inspecting the canvas in your browser developer console, `hermesCanvas.store`, `hermesCanvas.canvas`, and `hermesCanvas.launchpad` are available as live objects on the global scope.
 
 ## License
 
