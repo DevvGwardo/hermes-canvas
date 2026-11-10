@@ -56,9 +56,16 @@ describe("layouts", () => {
     expect(top.interactive).toBe(true)
     expect(under.interactive).toBe(false)
     expect(under.x).toBe(top.x)
+    // Covered cards become a uniform deck behind the front card, all the same
+    // height, with their contents hidden by the renderer.
+    expect(top.stacked).toBe(false)
+    expect(under.stacked).toBe(true)
+    expect(under.y).toBeGreaterThan(top.y)
+    expect(under.h).toBe(top.h)
     const open = layout("fold", gs, { expanded: "g2" })
     expect(open.cards.get("g2s1")!.interactive).toBe(true)
     expect(open.cards.get("g2s1")!.x).not.toBe(open.cards.get("g2s0")!.x)
+    expect(open.cards.get("g2s1")!.stacked).toBeFalsy()
   })
 
   test("satellites: hub at full size, others orbit smaller", () => {

@@ -69,6 +69,9 @@ function segmented<T extends string>(items: readonly T[], labels: Record<T, stri
   const group = el("div", "seg")
   group.setAttribute("role", "radiogroup")
   group.setAttribute("aria-label", name)
+  // The dock groups layouts, spinners and wallpapers side by side; a tiny
+  // caption above each group makes that split legible without a legend.
+  group.dataset.label = name
   const buttons = new Map<T, HTMLButtonElement>()
   for (const it of items) {
     const b = el("button", "seg-btn", labels[it]) as HTMLButtonElement

@@ -35,6 +35,8 @@ export interface Placement {
   z: number
   opacity: number
   interactive: boolean
+  /** Fold: this card sits behind the front of a pile. Its content is hidden. */
+  stacked?: boolean
 }
 
 export interface LabelPlacement {
@@ -168,31 +170,37 @@ function tabs(groups: LayoutGroup[], o: LayoutOptions, out: LayoutResult) {
 }
 
 const PILE_DEPTH = 4
+const PILE_STEP = 7
+const PILE_TOP = 4
 
 function pileBlock(g: LayoutGroup): Block {
   const sessions = g.items.filter((i) => i.kind === "session")
   const top = sessions[0] ?? g.items[0]
-  const h = LABEL_H + top.h + PILE_DEPTH * 7 + 8
+  const h = LABEL_H + PILE_TOP + top.h + PILE_DEPTH * PILE_STEP + 10
   return {
     key: g.key,
     w: CARD_W,
     h,
     place(ox, oy, out) {
       label(out, g.key, g.label, ox, oy, CARD_W, countLabel(g))
-      const baseY = oy + LABEL_H + PILE_DEPTH * 7
+      // The front card sits right under the project label; the rest of the
+      // pile peeks out below it like a deck, instead of poking up into the
+      // label. Only the front card shows its contents.
+      const baseY = oy + LABEL_H + PILE_TOP
       g.items.forEach((it, i) => {
         const isNew = it.kind === "new"
         const d = isNew ? PILE_DEPTH : Math.min(i, PILE_DEPTH)
         const sign = i % 2 ? 1 : -1
         out.cards.set(
           it.id,
-          card(ox, baseY - d * 7, isNew ? top.h : it.h, {
-            scale: 1 - d * 0.035,
-            rot: i === 0 ? 0 : sign * Math.min(d, 3) * 0.9,
+          card(ox, baseY + d * PILE_STEP, top.h, {
+            scale: 1 - d * 0.02,
+            rot: i === 0 ? 0 : sign * Math.min(d, 3) * 0.7,
             z: 100 - i,
-            opacity: isNew || i > PILE_DEPTH ? 0 : 1 - d * 0.17,
+            opacity: isNew || i > PILE_DEPTH ? 0 : 1 - d * 0.08,
             // The whole pile opens as one target.
             interactive: i === 0,
+            stacked: i > 0,
           }),
         )
       })

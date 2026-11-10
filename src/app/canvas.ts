@@ -325,7 +325,9 @@ export class CanvasView {
     let changed = false
     for (const id of this.heightsDirty) {
       const c = this.cards.get(id)
-      if (!c || c.kind !== "session") continue
+      // A stacked card is deliberately clipped to the front card's height, so
+      // measuring it would lose the card's real height for when the pile opens.
+      if (!c || c.kind !== "session" || c.root.classList.contains("stacked")) continue
       const h = c.root.offsetHeight
       if (h && Math.abs(h - c.h) > 1) {
         c.h = h
@@ -383,6 +385,14 @@ export class CanvasView {
       c.target = t
       c.root.style.zIndex = String(t.z)
       c.root.classList.toggle("inert", !t.interactive)
+      const stacked = !!t.stacked
+      if (c.root.classList.contains("stacked") !== stacked) {
+        c.root.classList.toggle("stacked", stacked)
+        // Back cards are height-clipped while stacked; re-measure when one
+        // rejoins the normal grid so it gets its real height back.
+        if (!stacked) this.heightsDirty.add(id)
+      }
+      if (stacked) c.root.style.setProperty("--stack-h", `${Math.round(t.h)}px`)
       if ((c as any).fresh || this.firstLayout) {
         ;(c as any).fresh = false
         c.sp.x = t.x
@@ -437,7 +447,9 @@ export class CanvasView {
         e.dataset.group = l.key
       }
       e.querySelector(".name")!.textContent = l.text
+      ;(e.querySelector(".name") as HTMLElement).title = l.text
       e.querySelector(".count")!.textContent = l.sub ?? ""
+      e.title = l.sub ? `${l.text} · ${l.sub}` : l.text
       this.renderLabelMarks(e.querySelector(".marks")!, l.key)
       e.style.width = `${l.w}px`
       e.style.transform = `translate(${l.x}px, ${l.y}px)`
@@ -468,6 +480,8 @@ export class CanvasView {
       }
     }
     const key = `${counts["needs-you"]}/${counts.working}/${counts.review}`
+    const labelEl = (host as HTMLElement).closest(".group-label")
+    labelEl?.classList.toggle("has-marks", counts["needs-you"] + counts.working + counts.review > 0)
     if ((host as HTMLElement).dataset.key === key) return
     ;(host as HTMLElement).dataset.key = key
     host.replaceChildren(

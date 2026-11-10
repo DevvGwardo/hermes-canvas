@@ -4575,3 +4575,339 @@ button {
     animation: none;
   }
 }
+
+/* ============================================================================
+   LEGIBILITY LAYER
+   Status tints are painted over opaque cards, covered Fold cards become
+   silhouettes, and the chrome gets a solid enough ground to read at a glance.
+   This layer comes last so it wins over the translucent desk-era tints above.
+   ========================================================================== */
+
+/* ---- cards: opaque tints, readable previews --------------------------------- */
+
+.card {
+  background: linear-gradient(180deg, #221405 0%, #190f03 100%);
+}
+
+.card:hover {
+  background: linear-gradient(180deg, #2b1a07 0%, #201304 100%);
+}
+
+.card.st-working {
+  background: linear-gradient(180deg, #1c2615 0%, #141a0f 100%);
+  border-color: rgba(74, 222, 128, 0.34);
+}
+
+.card.st-working:hover {
+  background: linear-gradient(180deg, #22301a 0%, #182012 100%);
+}
+
+.card.st-needs-you {
+  background: linear-gradient(180deg, #2a1e08 0%, #1f1505 100%);
+}
+
+.card.st-needs-you:hover {
+  background: linear-gradient(180deg, #33240a 0%, #261906 100%);
+}
+
+.card.st-review {
+  background: linear-gradient(180deg, #2a1e0a 0%, #1f1404 100%);
+  border-color: rgba(255, 172, 2, 0.34);
+}
+
+.card.st-review:hover {
+  background: linear-gradient(180deg, #33240c 0%, #261906 100%);
+}
+
+.card.st-failed.fresh {
+  background: linear-gradient(180deg, #2a100d 0%, #1c0b09 100%);
+}
+
+.card.st-failed.fresh:hover {
+  background: linear-gradient(180deg, #331410 0%, #230d0a 100%);
+}
+
+.card.st-failed .card-status .label {
+  color: #ff7d84;
+}
+
+.card.st-done,
+.card.st-stopped {
+  background: linear-gradient(180deg, #180e02 0%, #130b01 100%);
+}
+
+.card.st-done:hover,
+.card.st-stopped:hover {
+  background: linear-gradient(180deg, #211305 0%, #190f03 100%);
+}
+
+/* Fold: only the front card is readable; the ones behind become a deck of
+   coloured edges instead of a jumble of see-through paragraphs. */
+.card.stacked {
+  height: var(--stack-h, auto);
+  overflow: hidden;
+}
+
+.card.stacked .card-title,
+.card.stacked .card-body,
+.card.stacked .card-foot {
+  visibility: hidden;
+}
+
+/* The body only needs its soft top edge while it is actually clipping. */
+.card-body {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.card.working .card-body,
+.card-body.clipped {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
+}
+
+.card-text {
+  color: #e9d8ba;
+}
+
+.card-bullets li {
+  color: #e5d3b3;
+}
+
+.card-status .label {
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  color: var(--text-2);
+}
+
+.card.st-review .card-status .label {
+  color: var(--h-amber-bright);
+}
+
+.card.st-working .card-status {
+  color: #6ee7a0;
+}
+
+.card-sub {
+  color: var(--text-3);
+}
+
+/* ---- project labels: fit the name, keep the status marks --------------------- */
+
+.group-label {
+  gap: 9px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--h-amber-bright);
+}
+
+.group-label .name {
+  flex: 0 1 auto;
+}
+
+/* "1 to review" already says the pile has cards; the separate "3 sessions"
+   count is what used to push long project names into an ellipsis. */
+.group-label.has-marks .count {
+  display: none;
+}
+
+/* ---- top bar: a ground for the chrome --------------------------------------- */
+
+.topbar {
+  padding-bottom: 14px;
+  background: linear-gradient(
+    180deg,
+    rgba(18, 10, 1, 0.96) 0%,
+    rgba(18, 10, 1, 0.72) 58%,
+    rgba(18, 10, 1, 0) 100%
+  );
+  /* Let the brand and the actions keep their natural width; the search is the
+     only column that gives. The old 1fr/auto/1fr split clipped the last chip. */
+}
+
+@media (min-width: 641px) {
+  .topbar {
+    grid-template-columns: auto minmax(180px, 1fr) auto;
+  }
+}
+
+.search {
+  justify-self: center;
+}
+
+.chip {
+  flex: none;
+}
+
+.chips .stats {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+@media (max-width: 1400px) {
+  .chips .stats {
+    display: none;
+  }
+}
+
+.tiles-open-btn,
+.aa-toggle {
+  color: #ecdcc0;
+  background: rgba(30, 18, 4, 0.88);
+  border-color: rgba(255, 172, 2, 0.28);
+}
+
+.tiles-open-btn:hover,
+.tiles-open-btn.on,
+.aa-toggle:hover {
+  color: var(--h-cream);
+  background: #2a1806;
+  border-color: var(--h-hairline-hard);
+}
+
+.tiles-icon {
+  opacity: 1;
+}
+
+.aa-dot {
+  border-color: rgba(255, 246, 229, 0.4);
+}
+
+.aa-toggle.on {
+  color: var(--h-warning);
+  background: #2a1d05;
+  border-color: rgba(255, 189, 56, 0.52);
+}
+
+.chip-action.allow {
+  height: 24px;
+  padding: 0 8px;
+  color: var(--h-warning);
+  border: 1px solid rgba(255, 189, 56, 0.45);
+  background: rgba(255, 189, 56, 0.1);
+}
+
+.chip-action.allow:hover {
+  color: var(--h-amber-ink);
+  background: var(--h-warning);
+  border-color: var(--h-warning);
+}
+
+/* ---- dock: name the three groups ------------------------------------------- */
+
+.dock .seg {
+  align-items: center;
+}
+
+.dock .seg::before {
+  content: attr(data-label);
+  padding: 0 4px 0 6px;
+  font-family: var(--h-font-display);
+  font-weight: 600;
+  font-size: 8.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  opacity: 0.65;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.seg-btn {
+  color: #cbb28b;
+}
+
+@media (max-width: 860px) {
+  .dock .seg::before {
+    display: none;
+  }
+}
+
+/* ---- launchpad: one contained, hierarchical command deck -------------------- */
+
+.launchpad {
+  gap: 9px;
+}
+
+.launch-box {
+  background: linear-gradient(180deg, #241605 0%, #190f03 100%);
+  border-color: rgba(255, 172, 2, 0.42);
+  box-shadow: var(--h-bevel), 0 18px 46px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.launch-box:focus-within {
+  border-color: var(--h-amber);
+  box-shadow: var(--h-bevel), 0 18px 46px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(255, 172, 2, 0.4);
+}
+
+.launch-controls {
+  padding: 8px 9px 6px;
+  gap: 8px;
+}
+
+.launch-dest,
+.launch-mode {
+  height: 24px;
+  color: #d8c2a0;
+  background: #150d02;
+  border-color: rgba(255, 172, 2, 0.24);
+}
+
+.launch-dest:hover,
+.launch-mode:hover {
+  color: var(--h-cream);
+  background: #221405;
+  border-color: rgba(255, 172, 2, 0.5);
+}
+
+.launch-dest {
+  max-width: 300px;
+}
+
+.launch-dest .ld-label {
+  color: var(--h-cream);
+}
+
+.launch-mode.on {
+  color: var(--h-amber-bright);
+  background: rgba(255, 172, 2, 0.12);
+  border-color: rgba(255, 172, 2, 0.55);
+  box-shadow: none;
+}
+
+.launch-mode.on:hover {
+  color: var(--h-amber-bright);
+  background: rgba(255, 172, 2, 0.19);
+  border-color: var(--h-amber);
+}
+
+.launch-row {
+  padding: 7px 8px 8px 11px;
+  border-top: 1px solid rgba(255, 172, 2, 0.14);
+}
+
+.launch-input {
+  font-size: 15px;
+}
+
+.launch-send {
+  width: 34px;
+  height: 34px;
+}
+
+.launch-note {
+  font-size: 10.5px;
+  color: var(--text-3);
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.7);
+}
+
+.launch-mission {
+  background: rgba(23, 13, 2, 0.94);
+  color: var(--text-2);
+  border-color: rgba(255, 172, 2, 0.2);
+}
+
+.launch-mission:hover {
+  background: #2a1806;
+  border-color: rgba(255, 172, 2, 0.45);
+}

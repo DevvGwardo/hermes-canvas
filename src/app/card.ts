@@ -102,6 +102,16 @@ export function updateSessionCard(c: CardEls, store: Store, id: string, now = Da
     c.bullets.dataset.key = bulletKey
     c.bullets.replaceChildren(...bullets.map((b) => el("li", "", b)))
   }
+  // Only fade the top edge when the body actually clips its first line; the
+  // mask used to wash out the first line of every short preview too.
+  const bodyKey = `${body}\u0000${bulletKey}\u0000${pending}`
+  if (c.body.dataset.key !== bodyKey) {
+    c.body.dataset.key = bodyKey
+    c.body.classList.toggle(
+      "clipped",
+      !c.body.classList.contains("empty") && c.body.scrollHeight > c.body.clientHeight + 1,
+    )
+  }
 
   const status = store.status(id, now)
   const fresh = status === "failed" && store.unseen(id) && now - (s.time.idle ?? 0) < REVIEW_WINDOW
