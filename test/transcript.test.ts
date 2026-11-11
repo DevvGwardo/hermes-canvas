@@ -544,4 +544,58 @@ describe("Transcript — onEvent stream patching", () => {
     expect(list.children[1]).toBe(userEl) // the same user element, moved
     expect(textOf(list.children[1]!)).toContain("Fix the bug")
   })
+
+  it("paginates via cursor even on short pages, locks concurrent loadOlder, recovers on error, and preempts longer refetch timers", async () => {
+    jest.useFakeTimers()
+    const store = new Store({} as unknown as Backend)
+    let calls = 0
+    let resolveOlder!: (v: any) => void
+    let failOlder = false
+    const backend = {
+      messages: async (_id: string, _size: number, cursor?: string | null) => {
+        calls++
+        if (!cursor) return { data: [userMsg("m2", "newest")], cursor: { next: "c1" } }
+        if (failOlder) throw new Error("page error")
+        return await new Promise((r) => (resolveOlder = r))
+      },
+      inbox: async () => [],
+    } as unknown as Backend
+    const tr = newTranscript(store, backend, { pageSize: 16 })
+    const earlier = tr["earlier"] as unknown as FakeEl
+
+    tr.setSession("s1")
+    await flush()
+    // Short page (1 < 16) still enables Load earlier when cursor.next is present
+    expect(tr["cursorOlder"]).toBe("c1")
+    expect(earlier.hidden).toBe(false)
+
+    // Trigger two overlapping loadOlder calls -> only one backend request in flight
+    earlier.fire("click")
+    earlier.fire("click")
+    expect(calls).toBe(2)
+    expect((earlier as any).disabled).toBe(true)
+
+    resolveOlder({ data: [userMsg("m1", "older")], cursor: { next: "c0" } })
+    await flush()
+    expect(tr.messages.map((m) => m.id)).toEqual(["m1", "m2"])
+    expect((earlier as any).disabled).toBe(false)
+    expect(tr["cursorOlder"]).toBe("c0")
+
+    // Error during loadOlder preserves cursor, keeps button visible & re-enabled
+    failOlder = true
+    earlier.fire("click")
+    await flush()
+    expect(tr["cursorOlder"]).toBe("c0")
+    expect(earlier.hidden).toBe(false)
+    expect((earlier as any).disabled).toBe(false)
+
+    // scheduleRefetch with a shorter delay preempts a pending longer timer
+    const before = calls
+    tr.scheduleRefetch(450)
+    tr.scheduleRefetch(80)
+    jest.advanceTimersByTime(85)
+    await flush()
+    expect(calls).toBe(before + 1)
+    tr.destroy()
+  })
 })

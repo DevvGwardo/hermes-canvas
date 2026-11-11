@@ -189,6 +189,55 @@ describe("NewSessionPicker — folderOptions (path mode)", () => {
     await opts("~/code/") // exact dir listed too
     expect(folderCalls.filter((d) => d === "/home/t")).toHaveLength(1) // one fetch per directory
   })
+
+  it("handles bare ~, empty existing directories, Windows paths, basename entries, and uncached failures", async () => {
+    const winHome = "C:\\Users\\t"
+    let failOnce = true
+    const winCalls: string[] = []
+    const backend = {
+      listProjects: async () => [],
+      listSessions: async () => [],
+      active: async () => new Set<string>(),
+      listFolders: async (dir: string) => {
+        winCalls.push(dir)
+        if (dir === "/home/t/flaky" && failOnce) {
+          failOnce = false
+          throw new Error("temp error")
+        }
+        const map: Record<string, string[]> = {
+          "/home/t": ["empty", "code"],
+          "/home/t/empty": [],
+          "/home/t/flaky": ["inner"],
+          [winHome]: ["C:\\Users\\t\\code", "docs"],
+        }
+        return map[dir] ?? []
+      },
+    } as unknown as Backend
+    const store = new Store(backend)
+    const { p } = newPicker(backend, store, "/home/t")
+
+    // Bare ~ expands inside home rather than parent "/"
+    const tilde = (await p["folderOptions"]("~", 0))!
+    expect(tilde[0]!.directory).toBe("/home/t")
+    expect(tilde[0]!.sub).toContain("New session in this folder")
+    expect(tilde.slice(1).map((x: any) => x.label)).toEqual(["empty", "code"])
+
+    // Empty existing folder with trailing slash still reports as existing
+    const emptyOpts = (await p["folderOptions"]("~/empty/", 0))!
+    expect(emptyOpts[0]!.sub).toContain("New session in this folder")
+
+    // Rejected listing is NOT cached so a retry succeeds
+    await p["folderOptions"]("~/flaky/", 0)
+    const retried = (await p["folderOptions"]("~/flaky/", 0))!
+    expect(winCalls.filter((d) => d === "/home/t/flaky")).toHaveLength(2)
+    expect(retried.slice(1).map((x: any) => x.label)).toEqual(["inner"])
+
+    // Windows home + full-path entries normalized via basename
+    const { p: winP } = newPicker(backend, store, winHome)
+    const winOpts = (await winP["folderOptions"]("C:\\Users\\t\\co", 0))!
+    expect(winOpts[0]!.label).toBe("code")
+    expect(winOpts[0]!.directory).toBe("C:\\Users\\t\\code")
+  })
 })
 
 describe("NewSessionPicker — modelOptions (model mode)", () => {

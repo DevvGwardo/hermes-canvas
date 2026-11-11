@@ -37,6 +37,13 @@ export class SessionPanel {
   private hint: HTMLElement
   private attachRow: HTMLElement
   private popover?: HTMLElement
+  private popoverOwner?: "models" | "subagents" | "menu"
+  private popoverTrigger?: HTMLElement
+  private enterTimer?: ReturnType<typeof setTimeout>
+  private focusTimer?: ReturnType<typeof setTimeout>
+  private closeTimer?: ReturnType<typeof setTimeout>
+  private unsub: () => void
+  private onResize: () => void
 
   id?: string
   /** Set by the app once the tiled view exists. */
@@ -46,7 +53,7 @@ export class SessionPanel {
   private statusState = ""
 
   constructor(
-    private host: HTMLElement,
+    host: HTMLElement,
     private store: Store,
     private backend: Backend,
     private canvas: CanvasView,
@@ -57,13 +64,18 @@ export class SessionPanel {
     this.el = h("section", "panel")
     this.el.setAttribute("role", "dialog")
     this.el.setAttribute("aria-modal", "false")
+    this.el.setAttribute("aria-labelledby", "panel-title")
 
     this.header = h("header", "panel-head")
     const left = h("div", "head-left")
     this.projectEl = h("span", "head-project")
     this.statusEl = h("span", "head-status")
     this.modelBtn = h("button", "head-btn model") as HTMLButtonElement
+    this.modelBtn.type = "button"
     this.modelBtn.title = "Switch model"
+    this.modelBtn.setAttribute("aria-haspopup", "listbox")
+    this.modelBtn.setAttribute("aria-expanded", "false")
+    this.modelBtn.addEventListener("pointerdown", (e) => e.stopPropagation())
     this.modelBtn.addEventListener("click", (e) => {
       e.stopPropagation()
       void this.toggleModels()
@@ -73,15 +85,24 @@ export class SessionPanel {
     left.append(this.projectEl, this.statusEl, this.modelBtn, this.autoBadge)
     const right = h("div", "head-right")
     this.subBtn = h("button", "head-btn subagents") as HTMLButtonElement
+    this.subBtn.type = "button"
+    this.subBtn.setAttribute("aria-haspopup", "menu")
+    this.subBtn.setAttribute("aria-expanded", "false")
+    this.subBtn.addEventListener("pointerdown", (e) => e.stopPropagation())
     this.subBtn.addEventListener("click", (e) => {
       e.stopPropagation()
       this.toggleSubagents()
     })
     this.stopBtn = h("button", "head-btn stop", "Stop") as HTMLButtonElement
+    this.stopBtn.type = "button"
     this.stopBtn.title = "Interrupt (⌘.)"
     this.stopBtn.addEventListener("click", () => this.interrupt())
     this.menuBtn = h("button", "head-btn menu", "⋯") as HTMLButtonElement
+    this.menuBtn.type = "button"
     this.menuBtn.setAttribute("aria-label", "Session menu")
+    this.menuBtn.setAttribute("aria-haspopup", "menu")
+    this.menuBtn.setAttribute("aria-expanded", "false")
+    this.menuBtn.addEventListener("pointerdown", (e) => e.stopPropagation())
     this.menuBtn.addEventListener("click", (e) => {
       e.stopPropagation()
       this.toggleMenu()
@@ -90,6 +111,7 @@ export class SessionPanel {
     this.header.append(left, right)
 
     this.titleEl = h("h1", "panel-title")
+    this.titleEl.id = "panel-title"
     this.titleEl.title = "Double-click to rename"
     this.titleEl.addEventListener("dblclick", () => this.beginRename())
     this.line = h("div", "panel-line")
@@ -110,6 +132,7 @@ export class SessionPanel {
     this.input = h("textarea", "composer-input") as HTMLTextAreaElement
     this.input.rows = 1
     this.input.spellcheck = true
+    this.input.setAttribute("aria-label", "Message input")
     this.hint = h("span", "composer-hint")
     row.append(this.input, this.hint)
     composer.append(this.attachRow, row)
@@ -117,20 +140,60 @@ export class SessionPanel {
 
     this.el.append(this.header, this.titleEl, this.line, this.transcript.scroller, composer)
     this.el.addEventListener("pointerdown", () => this.closePopover())
+    this.el.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.popover) {
+        e.preventDefault()
+        e.stopPropagation()
+        const trig = this.popoverTrigger
+        this.closePopover()
+        trig?.focus?.()
+      }
+    })
     host.append(this.scrim, this.el)
 
-    store.on({
+    this.unsub = store.on({
       cards: (ids) => {
         if (this.id && ids.has(this.id)) this.renderHeader()
       },
     })
-    window.addEventListener("resize", () => {
+    this.onResize = () => {
       if (this.id && !this.closing) this.applyGeometry(this.targetRect(), false)
-    })
+    }
+    window.addEventListener("resize", this.onResize)
   }
 
   get isOpen() {
     return !!this.id && !this.closing
+  }
+
+  hasPopover() {
+    return !!this.popover
+  }
+
+  handleEscape(): boolean {
+    if (this.popover) {
+      const trig = this.popoverTrigger
+      this.closePopover()
+      trig?.focus?.()
+      return true
+    }
+    if (this.isOpen) {
+      this.close()
+      return true
+    }
+    return false
+  }
+
+  destroy() {
+    clearTimeout(this.enterTimer)
+    clearTimeout(this.focusTimer)
+    clearTimeout(this.closeTimer)
+    this.closePopover()
+    this.unsub()
+    window.removeEventListener("resize", this.onResize)
+    this.transcript.destroy()
+    this.el.remove()
+    this.scrim.remove()
   }
 
   // ---- open / close -----------------------------------------------------------
@@ -156,6 +219,10 @@ export class SessionPanel {
 
   open(id: string, from?: DOMRect) {
     const switching = this.isOpen
+    clearTimeout(this.enterTimer)
+    clearTimeout(this.focusTimer)
+    clearTimeout(this.closeTimer)
+    this.el.classList.remove("leaving")
     this.id = id
     this.closing = false
     this.attachments = []
@@ -174,25 +241,36 @@ export class SessionPanel {
       this.applyGeometry(from ?? new DOMRect(target.left + target.width / 2 - 150, target.top + 80, 300, 200), false)
       void this.el.offsetWidth
       this.applyGeometry(target, true)
-      setTimeout(() => this.el.classList.remove("entering"), 90)
+      this.enterTimer = setTimeout(() => {
+        this.enterTimer = undefined
+        if (!this.closing) this.el.classList.remove("entering")
+      }, 90)
     }
     this.transcript.setSession(id)
-    setTimeout(() => {
-      if (this.id === id && !matchMedia("(pointer: coarse)").matches) this.input.focus({ preventScroll: true })
+    this.focusTimer = setTimeout(() => {
+      this.focusTimer = undefined
+      if (this.id === id && !this.closing && !matchMedia("(pointer: coarse)").matches) {
+        this.input.focus({ preventScroll: true })
+      }
     }, switching ? 0 : 260)
   }
 
   close() {
     if (!this.id || this.closing) return
     const id = this.id
+    clearTimeout(this.enterTimer)
+    clearTimeout(this.focusTimer)
+    clearTimeout(this.closeTimer)
     this.closing = true
     this.closePopover()
     this.input.blur()
     const rect = this.canvas.cardRect(id)
+    this.el.classList.remove("entering")
     this.el.classList.add("leaving")
     this.scrim.classList.remove("visible")
     if (rect) this.applyGeometry(rect, true)
     const done = () => {
+      this.closeTimer = undefined
       if (!this.closing) return
       this.el.classList.remove("visible", "leaving", "animating")
       this.canvas.setOpen(undefined)
@@ -201,7 +279,7 @@ export class SessionPanel {
       this.closing = false
       this.onClosed()
     }
-    setTimeout(done, rect ? 380 : 120)
+    this.closeTimer = setTimeout(done, rect ? 380 : 120)
   }
 
   // ---- rendering ----------------------------------------------------------------
@@ -251,7 +329,7 @@ export class SessionPanel {
 
   // ---- header actions -----------------------------------------------------------
 
-  private async interrupt() {
+  async interrupt() {
     if (!this.id) return
     await this.transcript.act(() => this.backend.interrupt(this.id!))
   }
@@ -263,16 +341,31 @@ export class SessionPanel {
     t.contentEditable = "plaintext-only"
     t.focus()
     document.getSelection()?.selectAllChildren(t)
+    let finished = false
     const finish = (commit: boolean) => {
+      if (finished) return
+      finished = true
       t.contentEditable = "false"
       t.removeEventListener("keydown", onKey)
       t.removeEventListener("blur", onBlur)
-      const title = t.textContent?.trim() ?? ""
+      const title = (t.textContent ?? "").replace(/\s*\r?\n+\s*/g, " ").trim()
       const s = this.store.sessions.get(id)
       if (commit && s && title && title !== s.title) {
+        const prevTitle = s.title
         s.title = title
         this.store.markStructure()
-        void this.transcript.act(() => this.backend.rename(id, title))
+        void this.transcript.act(async () => {
+          try {
+            await this.backend.rename(id, title)
+          } catch (e) {
+            if (this.store.sessions.get(id) === s) {
+              s.title = prevTitle
+              this.store.markStructure()
+              if (this.id === id) this.renderHeader()
+            }
+            throw e
+          }
+        })
       }
       this.renderHeader()
     }
@@ -292,15 +385,25 @@ export class SessionPanel {
   }
 
   private closePopover() {
+    this.popoverTrigger?.setAttribute("aria-expanded", "false")
     this.popover?.remove()
     this.popover = undefined
+    this.popoverOwner = undefined
+    this.popoverTrigger = undefined
   }
 
-  private showPopover(anchor: HTMLElement, items: Array<{ label: string; sub?: string; run: () => void; working?: boolean }>) {
+  private showPopover(
+    anchor: HTMLElement,
+    owner: "subagents" | "menu",
+    items: Array<{ label: string; sub?: string; run: () => void; working?: boolean }>,
+  ) {
     this.closePopover()
     const pop = h("div", "popover")
+    pop.setAttribute("role", "menu")
     for (const it of items) {
       const b = h("button", "pop-item") as HTMLButtonElement
+      b.type = "button"
+      b.setAttribute("role", "menuitem")
       if (it.working) b.append(spinner(12))
       b.append(h("span", "pop-label", it.label))
       if (it.sub) b.append(h("span", "pop-sub", it.sub))
@@ -312,16 +415,36 @@ export class SessionPanel {
       pop.append(b)
     }
     pop.addEventListener("pointerdown", (e) => e.stopPropagation())
+    pop.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
+        const trig = this.popoverTrigger
+        this.closePopover()
+        trig?.focus?.()
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        const btns = [...pop.children] as HTMLButtonElement[]
+        if (!btns.length) return
+        e.preventDefault()
+        e.stopPropagation()
+        const idx = btns.indexOf(document.activeElement as HTMLButtonElement)
+        const next = idx < 0 ? 0 : (idx + (e.key === "ArrowDown" ? 1 : -1) + btns.length) % btns.length
+        btns[next]?.focus?.()
+      }
+    })
     const r = anchor.getBoundingClientRect()
     const pr = this.el.getBoundingClientRect()
     pop.style.top = `${r.bottom - pr.top + 6}px`
     pop.style.right = `${pr.right - r.right}px`
     this.el.append(pop)
     this.popover = pop
+    this.popoverOwner = owner
+    this.popoverTrigger = anchor
+    anchor.setAttribute("aria-expanded", "true")
   }
 
   private toggleSubagents() {
-    if (this.popover) return this.closePopover()
+    if (this.popover && this.popoverOwner === "subagents") return this.closePopover()
     const id = this.id
     if (!id) return
     const kids = [...(this.store.children.get(id) ?? [])]
@@ -330,6 +453,7 @@ export class SessionPanel {
       .sort((a, b) => b.time.updated - a.time.updated)
     this.showPopover(
       this.subBtn,
+      "subagents",
       kids.map((k) => ({
         label: this.store.title(k),
         sub: this.store.running.has(k.id) ? this.store.activityLabel(k.id) : `${k.agent ?? "subagent"} · ${timeAgo(k.time.updated)}`,
@@ -340,35 +464,47 @@ export class SessionPanel {
   }
 
   private async toggleModels() {
-    if (this.popover) return this.closePopover()
+    if (this.popover && this.popoverOwner === "models") return this.closePopover()
     const id = this.id
     const s = id ? this.store.sessions.get(id) : undefined
     if (!id || !s) return
+    this.closePopover()
     const pop = h("div", "popover models")
+    pop.setAttribute("role", "dialog")
+    pop.setAttribute("aria-label", "Choose model")
     const filter = h("input", "pop-filter") as HTMLInputElement
     filter.placeholder = "Search models"
+    filter.setAttribute("aria-label", "Search models")
     filter.spellcheck = false
     const list = h("div", "pop-list")
+    list.setAttribute("role", "listbox")
     pop.append(filter, list)
     pop.addEventListener("pointerdown", (e) => e.stopPropagation())
     const r = this.modelBtn.getBoundingClientRect()
     const pr = this.el.getBoundingClientRect()
     pop.style.top = `${r.bottom - pr.top + 6}px`
     pop.style.left = `${Math.max(12, r.left - pr.left)}px`
-    this.closePopover()
     this.el.append(pop)
     this.popover = pop
+    this.popoverOwner = "models"
+    this.popoverTrigger = this.modelBtn
+    this.modelBtn.setAttribute("aria-expanded", "true")
     list.append(h("div", "pop-empty", "Loading models…"))
     let all: Awaited<ReturnType<typeof models>>
     try {
       all = await models(this.backend)
     } catch (e) {
-      list.replaceChildren(h("div", "pop-empty", `Couldn't list models: ${(e as Error).message}`))
+      if (this.popover === pop) list.replaceChildren(h("div", "pop-empty", `Couldn't list models: ${(e as Error).message}`))
       return
     }
     if (this.popover !== pop) return
     const current = s.model ? `${s.model.providerID}/${s.model.id}` : ""
     const pinned = defaultModel()
+    let activeIdx = 0
+    const highlight = (items: HTMLButtonElement[]) => {
+      activeIdx = Math.max(0, Math.min(activeIdx, items.length - 1))
+      items.forEach((b, idx) => b.classList.toggle("active", idx === activeIdx))
+    }
     const draw = () => {
       const q = filter.value.toLowerCase().split(/\s+/).filter(Boolean)
       const hits = all
@@ -377,18 +513,35 @@ export class SessionPanel {
           return q.every((t) => hay.includes(t))
         })
         .slice(0, 80)
+      activeIdx = 0
       list.replaceChildren(
-        ...hits.map((m) => {
+        ...hits.map((m, idx) => {
           const key = `${m.providerID}/${m.id}`
-          const b = h("button", `pop-item${key === current ? " current" : ""}`) as HTMLButtonElement
+          const b = h("button", `pop-item${key === current ? " current" : ""}${idx === 0 ? " active" : ""}`) as HTMLButtonElement
+          b.type = "button"
+          b.setAttribute("role", "option")
+          b.setAttribute("aria-selected", String(key === current))
           b.append(h("span", "pop-label", m.name), h("span", "pop-sub", key + (pinned && `${pinned.providerID}/${pinned.id}` === key ? " · default for new sessions" : "")))
           b.addEventListener("click", () => {
             this.closePopover()
             const ref = { id: m.id, providerID: m.providerID }
+            const prevModel = s.model
+            const prevDefault = defaultModel()
             setDefaultModel(ref)
             s.model = ref
             this.renderHeader()
-            void this.transcript.act(() => this.backend.switchModel(id, ref))
+            void this.transcript.act(async () => {
+              try {
+                await this.backend.switchModel(id, ref)
+              } catch (e) {
+                setDefaultModel(prevDefault)
+                if (this.store.sessions.get(id) === s) {
+                  s.model = prevModel
+                  if (this.id === id) this.renderHeader()
+                }
+                throw e
+              }
+            })
           })
           return b
         }),
@@ -398,8 +551,23 @@ export class SessionPanel {
     filter.addEventListener("input", draw)
     filter.addEventListener("keydown", (e) => {
       e.stopPropagation()
-      if (e.key === "Escape") this.closePopover()
-      if (e.key === "Enter") (list.querySelector(".pop-item") as HTMLButtonElement | null)?.click()
+      if (e.key === "Escape") {
+        e.preventDefault()
+        this.closePopover()
+        this.modelBtn.focus()
+        return
+      }
+      const items = [...list.children].filter((c): c is HTMLButtonElement => c.className.split(/\s+/).includes("pop-item"))
+      if (!items.length) return
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        activeIdx = (activeIdx + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length
+        highlight(items)
+        items[activeIdx]?.scrollIntoView?.({ block: "nearest" })
+      } else if (e.key === "Enter") {
+        e.preventDefault()
+        ;(items[activeIdx] ?? (list.querySelector(".pop-item") as HTMLButtonElement | null))?.click()
+      }
     })
     draw()
     filter.focus()
@@ -416,11 +584,15 @@ export class SessionPanel {
   }
 
   private toggleMenu() {
-    if (this.popover) return this.closePopover()
+    if (this.popover && this.popoverOwner === "menu") return this.closePopover()
     const id = this.id
     const s = id ? this.store.sessions.get(id) : undefined
     if (!id || !s) return
     const copy = (text: string, what: string) => {
+      if (!navigator.clipboard?.writeText) {
+        toast("Clipboard unavailable")
+        return
+      }
       navigator.clipboard.writeText(text).then(
         () => toast(`Copied ${what}`),
         () => toast("Clipboard unavailable"),
@@ -444,31 +616,40 @@ export class SessionPanel {
     ]
     if (s.parentID && this.store.sessions.has(s.parentID))
       items.unshift({ label: "Open parent session", sub: this.store.title(this.store.sessions.get(s.parentID)!), run: () => this.open(s.parentID!) })
-    this.showPopover(this.menuBtn, items)
+    this.showPopover(this.menuBtn, "menu", items)
   }
 
   // ---- composer -----------------------------------------------------------------
 
+  private autosize() {
+    this.input.style.height = "auto"
+    this.input.style.height = `${Math.min(220, this.input.scrollHeight)}px`
+  }
+
   private bindComposer() {
     const input = this.input
-    const autosize = () => {
-      input.style.height = "auto"
-      input.style.height = `${Math.min(220, input.scrollHeight)}px`
-    }
-    input.addEventListener("input", autosize)
+    input.addEventListener("input", () => this.autosize())
     input.addEventListener("keydown", (e) => {
       e.stopPropagation()
       if (e.isComposing) return
+      const working = this.store.running.has(this.id ?? "")
       if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
         e.preventDefault()
-        void this.send(this.store.running.has(this.id ?? "") ? "steer" : undefined)
-      } else if (e.key === "Tab" && !e.shiftKey && (input.value.trim() || this.attachments.length)) {
+        void this.send(working ? "steer" : undefined)
+      } else if (e.key === "Tab" && !e.shiftKey && working && (input.value.trim() || this.attachments.length)) {
         e.preventDefault()
         void this.send("queue")
       } else if (e.key === "Escape") {
         e.preventDefault()
-        if (input.value) input.blur()
-        else this.close()
+        if (this.popover) {
+          const trig = this.popoverTrigger
+          this.closePopover()
+          trig?.focus?.()
+        } else if (input.value) {
+          input.blur()
+        } else {
+          this.close()
+        }
       } else if (e.key === "." && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
         void this.interrupt()
@@ -509,7 +690,9 @@ export class SessionPanel {
         const chip = h("span", "attach-chip")
         const img = h("img") as HTMLImageElement
         img.src = a.uri
+        img.alt = a.name || "Attachment"
         const x = h("button", "x", "×") as HTMLButtonElement
+        x.type = "button"
         x.setAttribute("aria-label", `Remove ${a.name}`)
         x.addEventListener("click", () => {
           this.attachments.splice(i, 1)
@@ -524,9 +707,17 @@ export class SessionPanel {
 
   private async send(delivery: "steer" | "queue" | undefined) {
     const id = this.id
-    const text = this.input.value.trim()
+    const rawText = this.input.value
+    const text = rawText.trim()
     if (!id || (!text && !this.attachments.length)) return
     const files = this.attachments.length ? [...this.attachments] : undefined
+    if (this.backend.kind === "live" && files?.length) {
+      if (!text) {
+        toast("Image attachments aren't sent to live Hermes sessions yet")
+        return
+      }
+      toast("Note: image attachments aren't sent to live Hermes sessions")
+    }
     this.input.value = ""
     this.input.style.height = "auto"
     this.attachments = []
@@ -545,7 +736,16 @@ export class SessionPanel {
       this.transcript.scheduleRefetch(80)
     } catch (e) {
       this.transcript.removePending(temp)
-      this.input.value = text
+      if (this.id === id) {
+        if (files?.length) {
+          this.attachments = [...files, ...this.attachments]
+          this.renderAttachments()
+        }
+        if (!this.input.value.trim()) {
+          this.input.value = rawText
+          this.autosize()
+        }
+      }
       toast(`Couldn't send: ${(e as Error).message}`)
     }
   }

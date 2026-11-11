@@ -23,7 +23,39 @@ const h = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text?: strin
   return e
 }
 
-const looksLikePath = (q: string) => /^(~|\/|\.\.?\/)/.test(q)
+const looksLikePath = (q: string) => /^(~|[A-Za-z]:[\\/]|\\\\|\/|\.\.?[\\/])/.test(q)
+const isWinPath = (p: string) => /^[A-Za-z]:|^\\\\/.test(p)
+const sepOf = (p: string) => (isWinPath(p) ? "\\" : "/")
+const isFsRoot = (p: string) =>
+  p === "/" || /^[A-Za-z]:[\\/]?$/.test(p) || /^\\\\[^\\/]+[\\/][^\\/]+[\\/]?$/.test(p)
+
+function splitParentLeaf(path: string): { parent: string; leaf: string; exact: string; trailing: boolean } {
+  const trailing = path.endsWith("/") || path.endsWith("\\")
+  const sep = sepOf(path)
+  const exact = isFsRoot(path)
+    ? /^[A-Za-z]:$/.test(path)
+      ? path + sep
+      : path
+    : path.replace(/[\\/]+$/, "") || "/"
+  const idx = Math.max(exact.lastIndexOf("/"), exact.lastIndexOf("\\"))
+  let parent: string
+  let leaf: string
+  if (idx < 0) {
+    parent = isWinPath(exact) ? exact : "/"
+    leaf = exact
+  } else if (idx === 2 && /^[A-Za-z]:[\\/]/.test(exact)) {
+    parent = exact.slice(0, 3)
+    leaf = exact.slice(3)
+  } else if (idx === 0) {
+    parent = "/"
+    leaf = exact.slice(1)
+  } else {
+    parent = exact.slice(0, idx)
+    leaf = exact.slice(idx + 1)
+  }
+  return { parent, leaf, exact, trailing }
+}
+
 const keyOf = (m?: ModelRef) => (m ? `${m.providerID}/${m.id}` : "")
 
 const ICON: Record<Option["kind"], string> = {
@@ -44,7 +76,9 @@ export class NewSessionPicker {
   private options: Option[] = []
   private active = 0
   private seq = 0
-  private folderCache = new Map<string, Promise<string[]>>()
+  private modelBtnSeq = 0
+  private folderCache = new Map<string, Promise<{ ok: boolean; entries: string[] }>>()
+  private prevFocus: Element | null = null
   private mode: "where" | "model" = "where"
   private whereQuery = ""
   private preferred?: string
@@ -65,6 +99,8 @@ export class NewSessionPicker {
 
   open(preferDirectory?: string) {
     if (this.el) return this.input.focus()
+    this.prevFocus = typeof document !== "undefined" ? (document.activeElement ?? null) : null
+    this.folderCache.clear()
     this.preferred = preferDirectory
     this.model = defaultModel()
     this.mode = "where"
@@ -74,11 +110,16 @@ export class NewSessionPicker {
     scrim.addEventListener("pointerdown", () => this.close())
     const box = h("div", "picker")
     box.setAttribute("role", "dialog")
+    box.setAttribute("aria-modal", "true")
     box.setAttribute("aria-label", "New session")
+    box.setAttribute("aria-labelledby", "picker-title")
     box.addEventListener("pointerdown", (e) => e.stopPropagation())
 
     const head = h("div", "picker-head")
+    const title = h("span", "picker-title", "New session")
+    title.id = "picker-title"
     this.modelBtn = h("button", "picker-model-btn") as HTMLButtonElement
+    this.modelBtn.type = "button"
     this.modelBtn.title = "Choose the model (Shift+Tab)"
     this.modelBtn.addEventListener("click", () => this.setMode(this.mode === "model" ? "where" : "model"))
     const auto = h("label", "picker-auto")
@@ -89,13 +130,14 @@ export class NewSessionPicker {
     auto.append(this.autoBox, document.createTextNode(" Auto-approve"))
     const headRight = h("div", "picker-head-right")
     headRight.append(auto, this.modelBtn)
-    head.append(h("span", "picker-title", "New session"), headRight)
+    head.append(title, headRight)
 
     this.input = h("input", "picker-input") as HTMLInputElement
     this.input.spellcheck = false
     this.input.autocomplete = "off"
     this.list = h("div", "picker-list")
     this.list.setAttribute("role", "listbox")
+    this.list.setAttribute("aria-labelledby", "picker-title")
     this.foot = h("div", "picker-foot")
     box.append(head, this.input, this.list, this.foot)
     scrim.append(box)
@@ -103,15 +145,41 @@ export class NewSessionPicker {
     this.el = scrim
 
     this.input.addEventListener("input", () => void this.refresh())
-    this.input.addEventListener("keydown", (e) => this.onKey(e))
+    this.input.addEventListener("keydown", (e) => this.onKey(e, true))
+    box.addEventListener("keydown", (e) => {
+      if ((e as any)._pickerHandled) return
+      if (e.key === "Escape") {
+        this.onKey(e, false)
+      } else if (e.key === "Tab" && e.target !== this.input) {
+        const focusables = [this.autoBox, this.modelBtn, this.input] as HTMLElement[]
+        const idx = focusables.indexOf(e.target as HTMLElement)
+        if (idx >= 0) {
+          e.preventDefault()
+          e.stopPropagation()
+          const next = focusables[(idx + (e.shiftKey ? -1 : 1) + focusables.length) % focusables.length]
+          next?.focus()
+        }
+      }
+    })
     this.setMode("where")
     void this.renderModelButton()
     requestAnimationFrame(() => this.input.focus())
   }
 
-  close() {
-    this.el?.remove()
+  close(restoreFocus = true) {
+    if (!this.el) return
+    this.el.remove()
     this.el = undefined
+    const prev = this.prevFocus
+    this.prevFocus = null
+    if (restoreFocus && prev && typeof (prev as HTMLElement).focus === "function") {
+      ;(prev as HTMLElement).focus()
+    }
+  }
+
+  handleEscape() {
+    if (this.mode === "model") this.setMode("where")
+    else this.close()
   }
 
   private setMode(mode: "where" | "model") {
@@ -131,6 +199,7 @@ export class NewSessionPicker {
   }
 
   private async renderModelButton() {
+    const seq = ++this.modelBtnSeq
     const btn = this.modelBtn
     btn.replaceChildren(h("span", "pm-k", "Model"))
     let name: string
@@ -145,7 +214,7 @@ export class NewSessionPicker {
       name = d ? d.name : "Hermes default"
       sub = d ? "Hermes default" : ""
     }
-    if (btn !== this.modelBtn) return
+    if (btn !== this.modelBtn || seq !== this.modelBtnSeq) return
     btn.append(h("span", "pm-v", name))
     if (sub) btn.append(h("span", "pm-s", sub))
     btn.append(h("span", "pm-caret", "▾"))
@@ -154,21 +223,47 @@ export class NewSessionPicker {
   // ---- where -------------------------------------------------------------------
 
   private expand(q: string) {
-    if (q === "~" || q.startsWith("~/")) return (this.home ?? "") + q.slice(1)
+    if (!this.home) return q
+    const home = this.home.replace(/[\\/]+$/, "") || "/"
+    const sep = sepOf(home)
+    if (q === "~") return home === "/" ? "/" : home + sep
+    if (q.startsWith("~/") || q.startsWith("~\\")) {
+      const rest = q.slice(2).replace(/[\\/]/g, sep)
+      return (home === "/" ? "" : home) + sep + rest
+    }
     return q
   }
 
   private show(p: string) {
-    return this.home && p.startsWith(this.home) ? "~" + p.slice(this.home.length) : p
+    if (!this.home) return p
+    const home = this.home.replace(/[\\/]+$/, "")
+    if (!home) return p
+    if (p === home) return "~"
+    const next = p[home.length]
+    if (p.startsWith(home) && (next === "/" || next === "\\")) return "~" + p.slice(home.length)
+    return p
   }
 
-  private folders(dir: string) {
+  private foldersResult(dir: string) {
     let p = this.folderCache.get(dir)
     if (!p) {
-      p = this.backend.listFolders(dir).catch(() => [])
+      p = this.backend
+        .listFolders(dir)
+        .then((raw) => ({
+          ok: true,
+          entries: [...new Set((raw ?? []).map((k) => basename(k)).filter(Boolean))],
+        }))
+        .catch(() => {
+          if (this.folderCache.get(dir) === p) this.folderCache.delete(dir)
+          return { ok: false, entries: [] }
+        })
       this.folderCache.set(dir, p)
     }
     return p
+  }
+
+  private async folders(dir: string): Promise<string[]> {
+    return (await this.foldersResult(dir)).entries
   }
 
   private projectOptions(q: string): Option[] {
@@ -197,17 +292,21 @@ export class NewSessionPicker {
 
   private async folderOptions(raw: string, seq: number): Promise<Option[] | undefined> {
     const path = this.expand(raw)
-    // List the parent, filter by the last segment.
-    const slash = path.lastIndexOf("/")
-    const parent = slash <= 0 ? "/" : path.slice(0, slash)
-    const leaf = path.slice(slash + 1).toLowerCase()
-    const exact = path.endsWith("/") ? path.replace(/\/+$/, "") || "/" : path
-    const [kids, exactKids] = await Promise.all([
-      this.folders(parent),
-      path.endsWith("/") ? this.folders(exact) : Promise.resolve(null),
+    const { parent, leaf: exactLeaf, exact, trailing } = splitParentLeaf(path)
+    const leaf = exactLeaf.toLowerCase()
+    const [parentRes, exactRes] = await Promise.all([
+      isFsRoot(exact) ? Promise.resolve({ ok: true, entries: [] as string[] }) : this.foldersResult(parent),
+      trailing ? this.foldersResult(exact) : Promise.resolve(null),
     ])
     if (seq !== this.seq) return undefined
-    const exists = path.endsWith("/") ? (exactKids?.length ?? 0) > 0 || exact === "/" : kids.includes(path.slice(slash + 1))
+    const kids = parentRes.entries
+    const exactKids = exactRes?.entries ?? null
+    const root = isFsRoot(exact)
+    const exists = root
+      ? (exactRes?.ok ?? true)
+      : trailing
+        ? !!exactRes?.ok && (exactKids!.length > 0 || (parentRes.ok && kids.includes(exactLeaf)))
+        : parentRes.ok && kids.includes(exactLeaf)
     const start: Option = {
       kind: "path",
       label: `Start in ${this.show(exact)}`,
@@ -215,12 +314,13 @@ export class NewSessionPicker {
       directory: exact,
     }
     const opts: Option[] = exists ? [start] : []
-    const base = path.endsWith("/") ? exact : parent
-    const names = (path.endsWith("/") ? (exactKids ?? []) : kids.filter((k) => k.toLowerCase().startsWith(leaf) && k.toLowerCase() !== leaf))
-      .filter((k) => !k.startsWith(".") || leaf.startsWith("."))
+    const base = trailing ? exact : parent
+    const sep = sepOf(base)
+    const names = (trailing ? (exactKids ?? []) : kids.filter((k) => k.toLowerCase().startsWith(leaf) && k.toLowerCase() !== leaf))
+      .filter((k) => !k.startsWith(".") || (!trailing && leaf.startsWith(".")))
       .slice(0, 40)
     for (const k of names) {
-      const dir = (base === "/" ? "" : base) + "/" + k
+      const dir = base.endsWith("/") || base.endsWith("\\") ? base + k : base + sep + k
       opts.push({ kind: "folder", label: k, sub: this.show(dir), directory: dir })
     }
     if (!exists) opts.push(start)
@@ -282,11 +382,14 @@ export class NewSessionPicker {
   private render(empty: string) {
     this.list.replaceChildren()
     if (!this.options.length) {
+      this.input.setAttribute?.("aria-activedescendant", "")
       this.list.append(h("div", "picker-empty", empty))
       return
     }
     this.options.forEach((o, i) => {
       const b = h("button", `picker-item ${o.kind}${i === this.active ? " active" : ""}${o.current ? " current" : ""}`) as HTMLButtonElement
+      b.type = "button"
+      b.id = `picker-opt-${i}`
       b.setAttribute("role", "option")
       b.setAttribute("aria-selected", String(i === this.active))
       b.append(h("span", "picker-icon", ICON[o.kind]), h("span", "picker-label", o.label), h("span", "picker-sub", o.sub))
@@ -301,13 +404,16 @@ export class NewSessionPicker {
       })
       this.list.append(b)
     })
+    if (this.options[this.active]) this.input.setAttribute?.("aria-activedescendant", `picker-opt-${this.active}`)
     this.list.children[this.active]?.scrollIntoView({ block: "nearest" })
   }
 
   private complete() {
     const o = this.options[this.active]
     if (!o?.directory) return
-    this.input.value = this.show(o.directory) + "/"
+    const shown = this.show(o.directory)
+    const sep = sepOf(o.directory)
+    this.input.value = shown.endsWith("/") || shown.endsWith("\\") ? shown : shown + sep
     void this.refresh()
     this.input.focus()
   }
@@ -323,24 +429,26 @@ export class NewSessionPicker {
     }
     if (!o.directory) return
     // Make sure a typed folder exists before creating a session there.
-    if (o.kind !== "project" && o.directory !== "/") {
-      const parent = o.directory.slice(0, o.directory.lastIndexOf("/")) || "/"
+    if (o.kind !== "project" && !isFsRoot(o.directory)) {
+      const { parent } = splitParentLeaf(o.directory)
       const siblings = await this.folders(parent)
       if (!siblings.includes(basename(o.directory))) {
         this.list.replaceChildren(h("div", "picker-empty error", `${o.directory} doesn't exist (or isn't a folder).`))
         return
       }
     }
-    this.close()
+    this.close(false)
     await this.onPick(o.directory, this.model, this.autoBox.checked)
   }
 
-  private onKey(e: KeyboardEvent) {
+  private onKey(e: KeyboardEvent, fromInput = true) {
+    ;(e as any)._pickerHandled = true
     e.stopPropagation()
     if (e.key === "Escape") {
       e.preventDefault()
-      if (this.mode === "model") this.setMode("where")
-      else this.close()
+      this.handleEscape()
+    } else if (!fromInput) {
+      return
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault()
       if (!this.options.length) return

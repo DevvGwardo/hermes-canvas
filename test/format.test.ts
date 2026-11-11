@@ -343,3 +343,56 @@ describe("markdown — the untested blocks", () => {
     expect(previewBlocks("- a\n- b\n- c\n- d\n- e")).toEqual({ text: "", bullets: ["c", "d", "e"] })
   })
 })
+
+describe("Hermes native tool aliases & safety", () => {
+  test("describeTool, toolRow, and summarizeTools recognize Hermes snake_case tool names", () => {
+    expect(describeTool("read_file", { path: "/repo/a.ts" })).toBe("Reading a.ts…")
+    expect(describeTool("write_file", { path: "/repo/b.ts" })).toBe("Editing b.ts…")
+    expect(describeTool("replace_in_file", { file_path: "/repo/c.ts" })).toBe("Editing c.ts…")
+    expect(describeTool("terminal", { command: "pytest -q" })).toBe("Running pytest -q…")
+    expect(describeTool("process", { action: "poll" })).toBe("Running a command…")
+    expect(describeTool("grep_search", { query: "needle" })).toBe("Searching for needle…")
+    expect(describeTool("search_files", { pattern: "Needle" })).toBe("Searching for Needle…")
+    expect(describeTool("find_files", { pattern: "*.py" })).toBe("Finding *.py…")
+    expect(describeTool("web_search", { query: "hermes" })).toBe("Searching the web for hermes…")
+    expect(describeTool("web_extract", { urls: ["https://docs.python.org/3/"] })).toBe("Fetching docs.python.org…")
+    expect(describeTool("fetch_url", { url: "https://example.com/a" })).toBe("Fetching example.com…")
+    expect(describeTool("delegate_task", { goal: "Audit module" })).toBe("Audit module…")
+    expect(describeTool("skill_view", { name: "git" })).toBe("Loading git…")
+    expect(describeTool("clarify")).toBe("Waiting for your answer")
+    expect(describeTool("todo")).toBe("Planning…")
+    expect(describeTool("execute_code")).toBe("Running code…")
+
+    expect(toolRow("read_file", { path: "a.ts" })).toEqual(["Read", "a.ts"])
+    expect(toolRow("write_file", { path: "b.ts" })).toEqual(["Wrote", "b.ts"])
+    expect(toolRow("replace_in_file", { path: "c.ts" })).toEqual(["Edited", "c.ts"])
+    expect(toolRow("process", { action: "kill", session_id: "p1" })).toEqual(["Ran", "kill"])
+    expect(toolRow("web_extract", { urls: ["https://x.dev"] })).toEqual(["Fetched", "https://x.dev"])
+    expect(toolRow("delegate_task", { task: "Check" })).toEqual(["Subagent", "Check"])
+
+    const summary = summarizeTools([
+      { name: "read_file", input: { path: "a.ts" } },
+      { name: "replace_in_file", input: { path: "b.ts" } },
+      { name: "terminal", input: { command: "ls" } },
+      { name: "search_files", input: { query: "q" } },
+      { name: "web_extract", input: { urls: ["https://x.dev"] } },
+      { name: "delegate_task", input: { goal: "g" } },
+      { name: "skill_view", input: { name: "s" } },
+    ])
+    expect(summary).toBe(
+      "Patched 1 file, ran 1 command, read 1 file, searched 1 pattern, fetched 1 page, ran 1 subagent, loaded 1 skill",
+    )
+  })
+
+  test("truncate handles non-positive/1 limits and safeJson survives circular values", () => {
+    expect(truncate("abcdef", 0)).toBe("")
+    expect(truncate("abcdef", -3)).toBe("")
+    expect(truncate("abcdef", 1)).toBe("…")
+    expect(truncate("a", 1)).toBe("a")
+
+    const cyc: any = { a: 1 }
+    cyc.self = cyc
+    expect(() => toolRow("custom.op", cyc)).not.toThrow()
+    expect(() => toolOutput({ status: "error", error: cyc })).not.toThrow()
+  })
+})

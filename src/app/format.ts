@@ -9,8 +9,18 @@ export function basename(p?: string | null): string {
 }
 
 export function truncate(s: string, n: number): string {
+  if (n <= 0) return ""
   s = s.replace(/\s+/g, " ").trim()
-  return s.length > n ? s.slice(0, n - 1) + "…" : s
+  if (s.length <= n) return s
+  return n === 1 ? "…" : s.slice(0, n - 1) + "…"
+}
+
+function safeJson(v: unknown, space?: number): string {
+  try {
+    return JSON.stringify(v, null, space) ?? ""
+  } catch {
+    return String(v)
+  }
 }
 
 export function timeAgo(ms: number, now = Date.now()): string {
@@ -41,44 +51,68 @@ function firstLine(s?: string) {
   return (s ?? "").split("\n").find((l) => l.trim()) ?? ""
 }
 
+function urlOf(input?: Record<string, any>): string | undefined {
+  return input?.url ?? (Array.isArray(input?.urls) ? input.urls[0] : undefined)
+}
+
 /** Present-tense label for a running tool: "Reading sessions.ts…". */
 export function describeTool(name: string, input?: Record<string, any>): string {
   const n = name.toLowerCase()
   switch (n) {
     case "read":
+    case "read_file":
       return pathOf(input) ? `Reading ${basename(pathOf(input))}…` : "Reading…"
     case "edit":
     case "write":
     case "patch":
     case "apply_patch":
     case "multiedit":
+    case "write_file":
+    case "replace_in_file":
       return pathOf(input) ? `Editing ${basename(pathOf(input))}…` : "Editing…"
     case "shell":
     case "bash":
+    case "terminal":
+    case "process":
       return input?.description
         ? `${truncate(String(input.description), 44)}…`
         : input?.command
           ? `Running ${truncate(firstLine(input.command), 40)}…`
           : "Running a command…"
     case "grep":
-      return input?.pattern ? `Searching for ${truncate(String(input.pattern), 32)}…` : "Searching…"
+    case "grep_search":
+    case "search_files": {
+      const q = input?.pattern ?? input?.query
+      return q ? `Searching for ${truncate(String(q), 32)}…` : "Searching…"
+    }
     case "glob":
     case "list":
+    case "find_files":
       return input?.pattern ? `Finding ${truncate(String(input.pattern), 32)}…` : "Listing files…"
     case "websearch":
+    case "web_search":
       return input?.query ? `Searching the web for ${truncate(String(input.query), 28)}…` : "Searching the web…"
     case "webfetch":
-      return `Fetching ${host(input?.url) || "a page"}…`
+    case "web_extract":
+    case "fetch_url":
+      return `Fetching ${host(urlOf(input)) || "a page"}…`
     case "subagent":
     case "task":
-      return input?.description ? `${truncate(String(input.description), 44)}…` : "Running a subagent…"
+    case "delegate_task": {
+      const desc = input?.description ?? input?.goal ?? input?.task
+      return desc ? `${truncate(String(desc), 44)}…` : "Running a subagent…"
+    }
     case "skill":
+    case "skill_view":
       return input?.name ? `Loading ${input.name}…` : "Loading a skill…"
     case "question":
+    case "clarify":
       return "Waiting for your answer"
     case "todowrite":
+    case "todo":
       return "Planning…"
     case "execute":
+    case "execute_code":
       return "Running code…"
     default:
       return `Calling ${name.replace(/^.*\./, "")}…`
@@ -90,35 +124,55 @@ export function toolRow(name: string, input?: Record<string, any>): [string, str
   const n = name.toLowerCase()
   switch (n) {
     case "read":
+    case "read_file":
       return ["Read", String(pathOf(input) ?? "")]
     case "edit":
     case "patch":
     case "apply_patch":
     case "multiedit":
+    case "replace_in_file":
       return ["Edited", String(pathOf(input) ?? "")]
     case "write":
+    case "write_file":
       return ["Wrote", String(pathOf(input) ?? "")]
     case "shell":
     case "bash":
-      return ["Ran", firstLine(input?.command)]
+    case "terminal":
+    case "process":
+      return ["Ran", firstLine(input?.command) || String(input?.action ?? input?.session_id ?? "")]
     case "grep":
-      return ["Searched", String(input?.pattern ?? "")]
+    case "grep_search":
+    case "search_files":
+      return ["Searched", String(input?.pattern ?? input?.query ?? pathOf(input) ?? "")]
     case "glob":
     case "list":
-      return ["Listed", String(input?.pattern ?? input?.path ?? "")]
+    case "find_files":
+      return ["Listed", String(input?.pattern ?? pathOf(input) ?? "")]
     case "websearch":
+    case "web_search":
       return ["Searched web", String(input?.query ?? "")]
     case "webfetch":
-      return ["Fetched", String(input?.url ?? "")]
+    case "web_extract":
+    case "fetch_url":
+      return ["Fetched", String(urlOf(input) ?? "")]
     case "subagent":
     case "task":
-      return ["Subagent", String(input?.description ?? input?.prompt ?? "")]
+    case "delegate_task":
+      return ["Subagent", String(input?.description ?? input?.goal ?? input?.prompt ?? input?.task ?? "")]
     case "skill":
+    case "skill_view":
       return ["Loaded skill", String(input?.name ?? "")]
     case "question":
+    case "clarify":
       return ["Asked", String(input?.question ?? input?.title ?? "")]
+    case "todowrite":
+    case "todo":
+      return ["Planned", Array.isArray(input?.todos) ? `${input.todos.length} items` : ""]
+    case "execute":
+    case "execute_code":
+      return ["Ran code", firstLine(input?.code)]
     default:
-      return [name.replace(/^.*\./, ""), input ? truncate(JSON.stringify(input), 120) : ""]
+      return [name.replace(/^.*\./, ""), input ? truncate(safeJson(input), 120) : ""]
   }
 }
 
@@ -131,24 +185,38 @@ const bucketOf = (name: string): Bucket => {
     case "patch":
     case "apply_patch":
     case "multiedit":
+    case "write_file":
+    case "replace_in_file":
       return "patch"
     case "shell":
     case "bash":
     case "execute":
+    case "terminal":
+    case "process":
+    case "execute_code":
       return "run"
     case "read":
+    case "read_file":
       return "read"
     case "grep":
     case "glob":
     case "list":
     case "websearch":
+    case "grep_search":
+    case "search_files":
+    case "find_files":
+    case "web_search":
       return "search"
     case "webfetch":
+    case "web_extract":
+    case "fetch_url":
       return "fetch"
     case "subagent":
     case "task":
+    case "delegate_task":
       return "subagent"
     case "skill":
+    case "skill_view":
       return "skill"
     default:
       return "other"
@@ -209,7 +277,7 @@ export function summarizeTools(tools: Array<{ name: string; input?: Record<strin
 export function toolOutput(state: ToolState): string {
   if (state.status === "error") {
     const e = state.error
-    return typeof e === "string" ? e : (e?.message ?? JSON.stringify(e ?? {}, null, 2))
+    return typeof e === "string" ? e : (e?.message ?? safeJson(e ?? {}, 2))
   }
   const text = (state.content ?? [])
     .map((c) => (c.type === "text" ? (c.text ?? "") : c.name ? `[${c.name}]` : `[${c.type}]`))

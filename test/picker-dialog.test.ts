@@ -483,5 +483,30 @@ describe("picker dialog — keyboard", () => {
     expect(input().value).toBe("alpha") // stashed query restored
     expect(input().attrs["aria-label"]).toBe("Project or folder")
   })
+
+  it("wires aria-modal, aria-activedescendant, box-level Escape from model button, and restores previous focus on cancel", async () => {
+    const { picker, scrim, input, rows, key } = await pickerFixture()
+    let restored = 0
+    ;(globalThis as any).document.activeElement = {
+      focus: () => void restored++,
+    }
+    picker.open()
+    await flush()
+
+    const box = scrim().children[0]!
+    expect(box.attrs["aria-modal"]).toBe("true")
+    expect(box.attrs["aria-labelledby"]).toBe("picker-title")
+    expect(input().attrs["aria-activedescendant"]).toBe("picker-opt-0")
+
+    await key("ArrowDown")
+    expect((rows()[1] as any).id).toBe("picker-opt-1")
+    expect(input().attrs["aria-activedescendant"]).toBe("picker-opt-1")
+
+    // Pressing Escape with target outside input (e.g. modelBtn) bubbles to box
+    box.fire("keydown", { key: "Escape" })
+    await flush()
+    expect(picker.isOpen).toBe(false)
+    expect(restored).toBe(1)
+  })
 })
 

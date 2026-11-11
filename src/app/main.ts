@@ -16,7 +16,7 @@ import { SPINNERS, setSpinnerStyle, spinner, type SpinnerStyle } from "./spinner
 import { ALLOW_ALL, STATUS_LABEL, Store, type Status } from "./store"
 import { toast } from "./toast"
 
-interface CanvasConfig {
+export interface CanvasConfig {
   mode: "live" | "demo"
   connected: boolean
   version?: string
@@ -27,7 +27,7 @@ interface CanvasConfig {
   error?: string
 }
 
-const pref = {
+export const pref = {
   get<T extends string>(k: string, fallback: T, allowed: readonly T[]): T {
     try {
       const v = localStorage.getItem(`hermes-canvas.${k}`) as T | null
@@ -65,7 +65,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text?: stri
   return e
 }
 
-function segmented<T extends string>(items: readonly T[], labels: Record<T, string>, current: T, onPick: (v: T) => void, name: string) {
+export function segmented<T extends string>(items: readonly T[], labels: Record<T, string>, current: T, onPick: (v: T) => void, name: string) {
   const group = el("div", "seg")
   group.setAttribute("role", "radiogroup")
   group.setAttribute("aria-label", name)
@@ -75,6 +75,7 @@ function segmented<T extends string>(items: readonly T[], labels: Record<T, stri
   const buttons = new Map<T, HTMLButtonElement>()
   for (const it of items) {
     const b = el("button", "seg-btn", labels[it]) as HTMLButtonElement
+    b.type = "button"
     b.setAttribute("role", "radio")
     b.addEventListener("click", () => {
       set(it)
@@ -93,7 +94,7 @@ function segmented<T extends string>(items: readonly T[], labels: Record<T, stri
   return { group, set }
 }
 
-function showUnavailable(root: HTMLElement, cfg: CanvasConfig) {
+export function showUnavailable(root: HTMLElement, cfg: CanvasConfig) {
   root.replaceChildren()
   const box = el("div", "empty-state")
   const mark = el("div", "empty-mark")
@@ -118,8 +119,10 @@ function showUnavailable(root: HTMLElement, cfg: CanvasConfig) {
   )
   const actions = el("div", "empty-actions")
   const retry = el("button", "btn primary", "Try again") as HTMLButtonElement
+  retry.type = "button"
   retry.addEventListener("click", () => location.reload())
   const demo = el("button", "btn", "Explore simulated sessions") as HTMLButtonElement
+  demo.type = "button"
   demo.addEventListener("click", () => {
     const u = new URL(location.href)
     u.searchParams.set("demo", "1")
@@ -130,8 +133,18 @@ function showUnavailable(root: HTMLElement, cfg: CanvasConfig) {
   root.append(box)
 }
 
-async function boot() {
-  const root = document.getElementById("app")!
+export interface BootHandle {
+  store: Store
+  canvas: CanvasView
+  panel: SessionPanel
+  tiles: TilesView
+  picker: NewSessionPicker
+  launchpad: Launchpad
+  destroy(): void
+}
+
+export async function boot(rootEl?: HTMLElement): Promise<BootHandle | undefined> {
+  const root = rootEl ?? document.getElementById("app")!
   // The splash markup ships in index.html so it paints before this module runs;
   // re-point its owl at the bundled asset so the path is always right.
   const bootPip = root.querySelector<HTMLImageElement>(".boot-pip")
@@ -139,7 +152,10 @@ async function boot() {
   const params = new URLSearchParams(location.search)
   const cfg = await getConfig()
   const demo = params.has("demo") || cfg.mode === "demo"
-  if (!demo && !cfg.connected) return showUnavailable(root, cfg)
+  if (!demo && !cfg.connected) {
+    showUnavailable(root, cfg)
+    return undefined
+  }
 
   const backend: Backend = demo ? new DemoBackend() : new HermesBackend()
   const store = new Store(backend)
@@ -152,6 +168,7 @@ async function boot() {
   setSpinnerStyle(spinnerStyle)
   root.dataset.layout = layoutName
 
+  let destroyed = false
   let panel: SessionPanel
   let launchpad: Launchpad | undefined
   const canvas = new CanvasView(root, store, {
@@ -165,11 +182,18 @@ async function boot() {
   ;(window as any).hermesCanvas = { canvas, store }
 
   panel = new SessionPanel(root, store, backend, canvas, () => {
+    if (destroyed) return
     root.classList.remove("panel-open")
-    if (location.hash) history.replaceState(null, "", location.pathname + location.search)
+    if (!tiles.isOpen && location.hash && location.hash !== "#tiles") {
+      history.replaceState(null, "", location.pathname + location.search)
+    }
   })
 
   function openSession(id: string) {
+    if (destroyed) return
+    if (helpEl) toggleHelp()
+    if (picker.isOpen) picker.close(false)
+    if (tiles.isOpen) tiles.close()
     const from = canvas.cardRect(id)
     canvas.select(id, false)
     canvas.centerOn(id, Math.max(0.9, Math.min(1, canvas.camera.z)))
@@ -186,6 +210,7 @@ async function boot() {
   async function createIn(directory: string, model: ModelRef | undefined = defaultModel(), autoApprove = store.autoApproveAll) {
     try {
       const s = await backend.createSession(directory, model, autoApprove ? [ALLOW_ALL] : undefined)
+      if (destroyed) return
       store.sessions.set(s.id, s)
       store.markStructure()
       // Wait a frame for the card to exist, then open it.
@@ -205,6 +230,8 @@ async function boot() {
   })
   panel.tiles = tiles
   function openTiles() {
+    if (helpEl) toggleHelp()
+    if (picker.isOpen) picker.close(false)
     if (panel.isOpen) panel.close()
     tiles.open()
     history.replaceState(null, "", "#tiles")
@@ -214,6 +241,7 @@ async function boot() {
   const userHome = demo ? "/Users/you" : (cfg.userHome ?? cfg.home)
   const picker = new NewSessionPicker(root, store, backend, userHome, createIn)
   const openPicker = () => {
+    if (helpEl) toggleHelp()
     const sel = canvas.selected ? store.sessions.get(canvas.selected) : undefined
     picker.open(sel?.location.directory)
   }
@@ -254,6 +282,7 @@ async function boot() {
   const chipEls = new Map<Status, HTMLButtonElement>()
   for (const st of CHIP_ORDER) {
     const b = el("button", `chip ${st}`) as HTMLButtonElement
+    b.type = "button"
     b.innerHTML = `<span class="chip-dot"></span><span class="chip-n">0</span><span class="chip-label">${STATUS_LABEL[st].toLowerCase()}</span>`
     b.addEventListener("click", () => setFilter(canvas.filter === st ? undefined : st))
     chipEls.set(st, b)
@@ -261,6 +290,7 @@ async function boot() {
   }
   // One click approves every waiting permission request, everywhere.
   const allowAll = el("button", "chip-action allow", "Allow all") as HTMLButtonElement
+  allowAll.type = "button"
   allowAll.hidden = true
   allowAll.title = "Approve every waiting permission request once"
   allowAll.addEventListener("click", async () => {
@@ -269,6 +299,7 @@ async function boot() {
   })
   chipEls.get("needs-you")!.after(allowAll)
   const markAll = el("button", "chip-action", "Mark all reviewed") as HTMLButtonElement
+  markAll.type = "button"
   markAll.hidden = true
   markAll.addEventListener("click", () => {
     const t = Date.now()
@@ -306,18 +337,22 @@ async function boot() {
   const right = el("div", "top-right")
   if (demo) right.append(el("span", "badge", "Simulated"))
   const tilesBtn = el("button", "tiles-open-btn") as HTMLButtonElement
+  tilesBtn.type = "button"
   tilesBtn.innerHTML = `<span class="tiles-icon" aria-hidden="true"></span><span class="tiles-label">Tiles</span><span class="tiles-n"></span>`
   tilesBtn.title = "Every running session's chat, side by side (T)"
   tilesBtn.addEventListener("click", () => (tiles.isOpen ? tiles.close() : openTiles()))
   right.append(autoApproveToggle(store), tilesBtn)
   autoApprovedNotices(store)
   const newBtn = el("button", "new-btn") as HTMLButtonElement
+  newBtn.type = "button"
   newBtn.innerHTML = `<span class="plus">+</span><span class="new-label">New session</span>`
   newBtn.title = "New session (N)"
   newBtn.addEventListener("click", () => openPicker())
   right.append(newBtn)
   const help = el("button", "icon-btn", "?") as HTMLButtonElement
+  help.type = "button"
   help.setAttribute("aria-label", "Keyboard shortcuts")
+  help.setAttribute("aria-expanded", "false")
   help.addEventListener("click", () => toggleHelp())
   right.append(help)
   top.append(brand, search, right)
@@ -411,13 +446,13 @@ async function boot() {
     if (document.title !== title) document.title = title
   }
   // Relative times and the 48h review window move even without events.
-  setInterval(updateStats, 30_000)
+  const statsTimer = setInterval(updateStats, 30_000)
   const updateConn = (s: ConnectionState) => {
     dot.dataset.state = s
     dot.title =
       s === "live" ? `Connected to Hermes ${cfg.version ?? ""}`.trim() : s === "demo" ? "Simulated sessions" : s === "reconnecting" ? "Reconnecting…" : "Connecting…"
   }
-  store.on({ structure: updateStats, cards: updateStats, connection: updateConn })
+  const unsubStore = store.on({ structure: updateStats, cards: updateStats, connection: updateConn })
   updateConn(store.connection)
 
   // ---- help ----
@@ -427,9 +462,13 @@ async function boot() {
     if (helpEl) {
       helpEl.remove()
       helpEl = undefined
+      help.setAttribute("aria-expanded", "false")
       return
     }
     helpEl = el("div", "help")
+    helpEl.setAttribute("role", "dialog")
+    helpEl.setAttribute("aria-label", "Keyboard shortcuts")
+    help.setAttribute("aria-expanded", "true")
     helpEl.innerHTML = `
       <h2>Canvas</h2>
       <dl>
@@ -469,7 +508,10 @@ async function boot() {
         <dt>Team · Solo</dt><dd>Team asks Hermes to split the task across subagents</dd>
         <dt>@project</dt><dd>Start this task at that project (e.g. @hermes-canvas fix tests)</dd>
       </dl>`
-    helpEl.addEventListener("click", () => toggleHelp())
+    helpEl.addEventListener("click", () => {
+      if (typeof window.getSelection === "function" && window.getSelection()?.toString()) return
+      toggleHelp()
+    })
     root.append(helpEl)
   }
 
@@ -492,13 +534,33 @@ async function boot() {
 
   // ---- keyboard ----
 
-  window.addEventListener("keydown", (e) => {
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (picker.isOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        picker.handleEscape()
+      }
+      return
+    }
     const target = e.target instanceof Element ? e.target : null
     if (target?.closest("input, textarea, select, [contenteditable='true'], [contenteditable='plaintext-only']")) return
+    if (e.key === "." && (e.metaKey || e.ctrlKey)) {
+      if (panel.isOpen) {
+        e.preventDefault()
+        void panel.interrupt()
+        return
+      }
+      const targetId = tiles.isOpen ? tiles.maximized : canvas.selected
+      if (targetId && store.running.has(targetId)) {
+        e.preventDefault()
+        void backend.interrupt(targetId).catch((err) => toast((err as Error).message))
+        return
+      }
+    }
     if (e.key === "Escape") {
       if (helpEl) return toggleHelp()
-      if (picker.isOpen) return picker.close()
-      if (panel.isOpen) return panel.close()
+      if (launchpad?.closeOpenMenu()) return
+      if (panel.handleEscape()) return
       if (tiles.isOpen) {
         if (tiles.maximized) return tiles.toggleMax(tiles.maximized)
         return tiles.close()
@@ -513,7 +575,10 @@ async function boot() {
       return canvas.select(undefined)
     }
     if (panel.isOpen) {
-      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) panel.focusInput()
+      const interactive = target?.closest("button, a, [role='button'], [role='menuitem'], summary")
+      if (!interactive && e.key.length === 1 && e.key !== " " && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        panel.focusInput()
+      }
       return
     }
     if ((e.key === "t" || e.key === "T") && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -574,20 +639,43 @@ async function boot() {
     if (e.key.length === 1 && /\S/.test(e.key)) {
       searchInput.focus()
     }
-  })
+  }
+  window.addEventListener("keydown", onKeyDown)
+
+  const destroy = () => {
+    destroyed = true
+    clearTimeout(searchTimer)
+    clearInterval(statsTimer)
+    unsubStore()
+    window.removeEventListener("keydown", onKeyDown)
+    store.stop()
+    helpEl?.remove()
+    helpEl = undefined
+    picker.close(false)
+    panel.destroy()
+    launchpad?.destroy()
+    ;(tiles as { destroy?: () => void }).destroy?.()
+    ;(canvas as { destroy?: () => void }).destroy?.()
+  }
 
   try {
     await store.start()
   } catch (e) {
-    store.stop()
-    if (!demo) return showUnavailable(root, { ...cfg, connected: false, error: (e as Error).message })
-    throw e
+    destroy()
+    showUnavailable(root, { ...cfg, mode: "live", connected: false, error: (e as Error).message })
+    return undefined
   }
+
+  if (destroyed) return { store, canvas, panel, tiles, picker, launchpad, destroy }
 
   // Deep links: /#tiles, /#ses_…
   const hash = location.hash.slice(1)
   if (hash === "tiles") openTiles()
-  if (hash && store.sessions.has(hash)) requestAnimationFrame(() => requestAnimationFrame(() => openSession(hash)))
+  else if (hash && store.sessions.has(hash)) requestAnimationFrame(() => requestAnimationFrame(() => openSession(hash)))
+
+  return { store, canvas, panel, tiles, picker, launchpad, destroy }
 }
 
-void boot()
+if (typeof document !== "undefined" && document.getElementById("app") && !(globalThis as any).__HERMES_TEST__) {
+  void boot()
+}

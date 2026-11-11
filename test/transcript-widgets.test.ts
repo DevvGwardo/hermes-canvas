@@ -538,3 +538,75 @@ describe("Transcript — pending message rows", () => {
     expect(textOf(rows[0]!)).toContain("pending 2") // reference-based removal kept the other
   })
 })
+
+describe("Transcript — accessibility, form groups & numeric validation", () => {
+  it("supports keyboard Enter/Space and aria-expanded on activity head, tool row, and reasoning row", async () => {
+    const { tr, list } = await widgetTranscript()
+    tr.messages = [
+      {
+        type: "assistant",
+        id: "a1",
+        time: { created: 1, completed: 2 },
+        agent: "build",
+        model: { id: "m", providerID: "p" },
+        content: [
+          {
+            type: "tool",
+            id: "t1",
+            name: "bash",
+            state: { status: "completed", input: { command: "echo ok" }, content: [{ type: "text", text: "ok" }] },
+            time: { created: 1, completed: 2 },
+          },
+          { type: "reasoning", text: "thinking step" },
+        ],
+      } as any,
+    ]
+    tr.render(false)
+    const head = find(list, (e) => e.className.includes("activity-head"))!
+    expect(head.tag).toBe("button")
+    expect(head.type).toBe("button")
+    expect(head.attrs["aria-expanded"]).toBe("false")
+
+    head.fire("click")
+    driveRaf()
+    const headExpanded = find(list, (e) => e.className.includes("activity-head"))!
+    expect(headExpanded.attrs["aria-expanded"]).toBe("true")
+
+    const row = find(list, (e) => e.className.includes("activity-row") && !e.className.includes("reasoning"))!
+    expect(row.attrs["role"]).toBe("button")
+    expect(row.attrs["aria-expanded"]).toBe("false")
+    for (const fn of row.handlers["keydown"] ?? []) fn({ key: "Enter", preventDefault() {} })
+    expect(row.attrs["aria-expanded"]).toBe("true")
+
+    const reasoning = find(list, (e) => e.className.includes("activity-row reasoning"))!
+    expect(reasoning.attrs["role"]).toBe("button")
+    expect(reasoning.attrs["aria-expanded"]).toBe("false")
+    for (const fn of reasoning.handlers["keydown"] ?? []) fn({ key: " ", preventDefault() {} })
+    expect(reasoning.attrs["aria-expanded"]).toBe("true")
+  })
+
+  it("renders multiselect as non-nested div[role=group] and drops invalid NaN number inputs on submit", async () => {
+    const { tr, store, list, forms } = await widgetTranscript()
+    store.forms.set("s1", [
+      {
+        id: "f2",
+        sessionID: "s1",
+        title: "Checks",
+        fields: [
+          { key: "ratio", type: "number", title: "Ratio" },
+          { key: "tags", type: "multiselect", title: "Tags", options: [{ value: "x", label: "X" }] },
+        ],
+      },
+    ])
+    tr.render(false)
+    const formEl = find(list, (e) => e.tag === "form")!
+    const group = find(formEl, (e) => e.attrs["role"] === "group")!
+    expect(group.tag).toBe("div") // not nested <label> inside <label>
+    const inputs = all(formEl, (e) => e.tag === "input")
+    inputs[0]!.value = "not-a-number"
+    inputs[1]!.checked = true
+    formEl.fire("submit")
+    await flush()
+    expect(forms).toEqual([{ sessionID: "s1", id: "f2", answer: { tags: ["x"] } }])
+  })
+})

@@ -289,4 +289,58 @@ describe("Launchpad", () => {
     expect((lp as any).directory).toBe("/home/t/code/app")
     expect((lp as any).menu).toBeUndefined()
   })
+
+  it("shows an inline alert inside .launch-box on unreadable folder and ignores empty @project mentions", async () => {
+    const ls = installStorage()
+    let failList = true
+    const backend = {
+      listProjects: async () => [{ id: "p1", name: "hermes-canvas", canonical: "/repo/hermes-canvas" }],
+      listSessions: async () => [mkSession("seen", "/repo/hermes-canvas")],
+      active: async () => new Set<string>(),
+      listFolders: async () => {
+        if (failList) throw new Error("EACCES")
+        return []
+      },
+      createSession: async (directory: string) => mkSession("new", directory),
+      prompt: async () => {},
+    } as unknown as Backend
+    const store = new Store(backend)
+    await store.reload()
+    const host = new FakeEl("div")
+    const lp = new Launchpad(host as any, store, backend, {
+      home: "/home/t",
+      selectedDirectory: () => "/repo/hermes-canvas",
+      openSession: () => {},
+    })
+
+    // @project without task text must not overwrite persisted directory
+    ;(lp as any).input.value = "@hermes-canvas   "
+    await (lp as any).launch()
+    expect(ls["hermes-canvas.launch.dir"]).toBeUndefined()
+
+    // Destination menu mounts inside .launch-box and reports error in visible .launch-menu-err
+    ;(lp as any).destBtn.click()
+    const box = (lp as any).box as FakeEl
+    const menu = (lp as any).menu as FakeEl
+    expect(menu.parent).toBe(box)
+    const filter = menu.children[0]!
+    const err = menu.children[1]!
+    expect(err.className).toBe("launch-menu-err")
+    expect(err.attrs["role"]).toBe("alert")
+    expect(err.hidden).toBe(true)
+
+    filter.value = "~/secret"
+    filter.fire("input")
+    filter.fire("keydown", { key: "Enter" })
+    for (let i = 0; i < 8; i++) await Promise.resolve()
+    expect(err.hidden).toBe(false)
+    expect(err.textContent).toContain("isn't readable")
+    expect((lp as any).menu).toBeDefined()
+
+    // closeOpenMenu & destroy cleanup
+    expect(lp.closeOpenMenu()).toBe(true)
+    expect(lp.closeOpenMenu()).toBe(false)
+    lp.destroy()
+    expect(host.children).toHaveLength(0)
+  })
 })

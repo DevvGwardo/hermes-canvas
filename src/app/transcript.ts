@@ -8,7 +8,7 @@ import { renderMarkdown } from "./markdown"
 import { spinner } from "./spinners"
 import type { Store } from "./store"
 import { toast } from "./toast"
-import type { AssistantPart, FileAttachment, FormField, FormInfo, InboxItem, Message, OcEvent, PermissionRequest } from "./types"
+import type { AssistantPart, FileAttachment, FormField, FormInfo, InboxItem, Message, OcEvent, Page, PermissionRequest } from "./types"
 
 type ActivityItem =
   | { kind: "tool"; key: string; name: string; input?: Record<string, any>; status: string; output?: string }
@@ -61,8 +61,11 @@ export class Transcript {
   private rendered = new Map<string, Rendered>()
   private expanded = new Set<string>()
   private refetchTimer?: ReturnType<typeof setTimeout>
+  private refetchAt = 0
   private renderQueued = false
   private loadSeq = 0
+  private olderInflight = false
+  private mdCache = new Map<string, string>()
   private off: () => void
 
   constructor(
@@ -72,6 +75,7 @@ export class Transcript {
   ) {
     this.scroller = h("div", `transcript-scroll${opts.compact ? " compact" : ""}`)
     this.earlier = h("button", "earlier", "Load earlier messages") as HTMLButtonElement
+    this.earlier.type = "button"
     this.earlier.hidden = true
     this.earlier.addEventListener("click", () => this.loadOlder())
     this.list = h("div", `transcript${opts.compact ? " compact" : ""}`)
@@ -89,16 +93,21 @@ export class Transcript {
 
   /** Show a session (or nothing). Resets state and loads the latest page. */
   setSession(id: string | undefined) {
+    this.loadSeq++
     this.id = id
     this.messages = []
     this.inbox = []
     this.cursorOlder = undefined
+    this.olderInflight = false
     this.rendered.clear()
     this.expanded.clear()
     this.list.replaceChildren()
     this.earlier.hidden = true
+    this.earlier.disabled = false
+    this.earlier.textContent = "Load earlier messages"
     if (this.refetchTimer) clearTimeout(this.refetchTimer)
     this.refetchTimer = undefined
+    this.refetchAt = 0
     if (id) {
       this.queueRender()
       void this.load(true)
@@ -117,8 +126,11 @@ export class Transcript {
   }
 
   destroy() {
+    this.loadSeq++
     this.off()
     if (this.refetchTimer) clearTimeout(this.refetchTimer)
+    this.refetchTimer = undefined
+    this.refetchAt = 0
     this.id = undefined
   }
 
@@ -133,14 +145,20 @@ export class Transcript {
       ])
       if (seq !== this.loadSeq || id !== this.id) return
       const latest = [...page.data].reverse()
+      const nextCursor = (page as Page<Message> & { hasMore?: boolean }).hasMore === false ? undefined : (page.cursor?.next ?? undefined)
       // Keep any older pages already loaded above the newest page.
       if (this.messages.length > latest.length && latest.length) {
         const firstNew = latest[0].id
         const idx = this.messages.findIndex((m) => m.id === firstNew)
-        this.messages = idx >= 0 ? [...this.messages.slice(0, idx), ...latest] : latest
+        if (idx >= 0) {
+          this.messages = [...this.messages.slice(0, idx), ...latest]
+        } else {
+          this.messages = latest
+          this.cursorOlder = nextCursor
+        }
       } else {
         this.messages = latest
-        this.cursorOlder = page.data.length >= this.opts.pageSize ? page.cursor?.next : undefined
+        this.cursorOlder = nextCursor
       }
       this.inbox = inbox
       this.render(scrollToEnd)
@@ -152,27 +170,42 @@ export class Transcript {
   private async loadOlder() {
     const id = this.id
     const cursor = this.cursorOlder
-    if (!id || !cursor) return
-    this.cursorOlder = undefined
+    if (!id || !cursor || this.olderInflight) return
+    const seq = this.loadSeq
+    this.olderInflight = true
+    this.earlier.disabled = true
     this.earlier.textContent = "Loading…"
     try {
       const page = await this.backend.messages(id, this.opts.pageSize, cursor)
-      if (id !== this.id) return
+      if (id !== this.id || seq !== this.loadSeq) return
       const before = this.scroller.scrollHeight
-      const older = [...page.data].reverse().filter((m) => !this.messages.some((x) => x.id === m.id))
+      const seen = new Set(this.messages.map((x) => x.id))
+      const older = [...page.data].reverse().filter((m) => !seen.has(m.id))
       this.messages = [...older, ...this.messages]
-      this.cursorOlder = page.data.length >= this.opts.pageSize ? page.cursor?.next : undefined
+      this.cursorOlder = (page as Page<Message> & { hasMore?: boolean }).hasMore === false ? undefined : (page.cursor?.next ?? undefined)
       this.render(false)
-      this.scroller.scrollTop += this.scroller.scrollHeight - before
+      const delta = this.scroller.scrollHeight - before
+      if (delta > 0) this.scroller.scrollTop += delta
+    } catch (e) {
+      if (id === this.id && seq === this.loadSeq) {
+        toast(`Couldn't load earlier messages: ${(e as Error).message}`)
+      }
     } finally {
+      if (seq === this.loadSeq) this.olderInflight = false
+      this.earlier.disabled = false
       this.earlier.textContent = "Load earlier messages"
+      this.earlier.hidden = !this.cursorOlder
     }
   }
 
   scheduleRefetch(delay = 450) {
-    if (this.refetchTimer) return
+    const due = Date.now() + delay
+    if (this.refetchTimer && this.refetchAt <= due) return
+    if (this.refetchTimer) clearTimeout(this.refetchTimer)
+    this.refetchAt = due
     this.refetchTimer = setTimeout(() => {
       this.refetchTimer = undefined
+      this.refetchAt = 0
       void this.load(false)
     }, delay)
   }
@@ -366,6 +399,52 @@ export class Transcript {
     return out
   }
 
+  private blockSig(b: Block): string {
+    switch (b.kind) {
+      case "working":
+        return "w"
+      case "text":
+        return `t:${b.text.length}:${b.text}`
+      case "error":
+        return `e:${b.text}`
+      case "divider":
+        return `d:${b.text}`
+      case "user":
+        return `u:${b.text.length}:${b.text}|${b.files.map((f) => `${f.src ?? ""}:${f.name ?? ""}:${f.mime}`).join(",")}`
+      case "shell":
+        return `sh:${b.status}:${b.command}:${b.output.length}:${b.output}`
+      case "inbox":
+        return `in:${b.item.id}:${b.item.delivery}:${b.item.payload?.text ?? ""}`
+      case "permission":
+        return `p:${b.req.id}:${b.pending}:${b.req.action}:${b.req.resources?.length ?? 0}`
+      case "form":
+        return `f:${b.form.id}:${b.form.fields.length}`
+      case "activity": {
+        const exp = this.expanded.has(b.key)
+        return `a:${exp ? "+" : "-"}${b.items
+          .map((it) =>
+            it.kind === "reasoning"
+              ? `r:${it.key}:${it.running ? 1 : 0}:${exp ? it.text : it.text.trim().length > 0}`
+              : `t:${it.key}:${it.name}:${it.status}:${it.output?.length ?? -1}:${exp ? (it.output ?? "") : ""}:${describeTool(it.name, it.input)}${exp ? `:${toolRow(it.name, it.input).join("|")}` : ""}`,
+          )
+          .join("|")}`
+      }
+    }
+  }
+
+  private mdHtml(text: string): string {
+    let html = this.mdCache.get(text)
+    if (html === undefined) {
+      html = renderMarkdown(text)
+      if (this.mdCache.size >= 256) {
+        const oldest = this.mdCache.keys().next().value
+        if (oldest !== undefined) this.mdCache.delete(oldest)
+      }
+      this.mdCache.set(text, html)
+    }
+    return html
+  }
+
   render(scrollToEnd: boolean) {
     if (!this.id) return
     const nearEnd = this.scroller.scrollHeight - this.scroller.scrollTop - this.scroller.clientHeight < 90
@@ -374,7 +453,7 @@ export class Transcript {
     let prev: Element | null = null
     for (const b of blocks) {
       keep.add(b.key)
-      const sig = b.kind === "working" ? "w" : JSON.stringify(b) + (this.expanded.has(b.key) ? "+" : "")
+      const sig = this.blockSig(b)
       let r = this.rendered.get(b.key)
       if (!r || r.sig !== sig) {
         const el = this.renderBlock(b)
@@ -424,7 +503,7 @@ export class Transcript {
         const row = h("div", "msg assistant")
         row.append(h("div", "gutter"))
         const body = h("div", "body md")
-        body.innerHTML = renderMarkdown(b.text)
+        body.innerHTML = this.mdHtml(b.text)
         row.append(body)
         return row
       }
@@ -470,7 +549,8 @@ export class Transcript {
     const tools = b.items.filter((i): i is Extract<ActivityItem, { kind: "tool" }> => i.kind === "tool")
     const running = b.items.some((i) => (i.kind === "tool" ? i.status === "running" || i.status === "streaming" : i.running))
     const open = this.expanded.has(b.key)
-    const head = h("button", "activity-head")
+    const head = h("button", "activity-head") as HTMLButtonElement
+    head.type = "button"
     head.setAttribute("aria-expanded", String(open))
     if (running) head.append(spinner(12))
     else head.append(h("span", "twisty", open ? "–" : "+"))
@@ -492,8 +572,21 @@ export class Transcript {
         if (it.kind === "reasoning") {
           if (!it.text.trim()) continue
           const r = h("div", "activity-row reasoning")
+          r.setAttribute("role", "button")
+          r.tabIndex = 0
+          r.setAttribute("aria-expanded", "false")
           r.append(h("span", "verb", "Thought"), h("span", "target", truncate(it.text, 160)))
-          r.addEventListener("click", () => r.classList.toggle("open"))
+          const toggleReasoning = () => {
+            const opened = r.classList.toggle("open")
+            r.setAttribute("aria-expanded", String(opened))
+          }
+          r.addEventListener("click", toggleReasoning)
+          r.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              toggleReasoning()
+            }
+          })
           const full = h("div", "reasoning-text", it.text)
           listEl.append(r, full)
           continue
@@ -506,9 +599,20 @@ export class Transcript {
           const pre = h("pre", "tool-output", truncate(it.output, 6000))
           pre.hidden = true
           r.classList.add("expandable")
-          r.addEventListener("click", () => {
+          r.setAttribute("role", "button")
+          r.tabIndex = 0
+          r.setAttribute("aria-expanded", "false")
+          const toggleOut = () => {
             pre.hidden = !pre.hidden
             r.classList.toggle("open", !pre.hidden)
+            r.setAttribute("aria-expanded", String(!pre.hidden))
+          }
+          r.addEventListener("click", toggleOut)
+          r.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              toggleOut()
+            }
           })
           listEl.append(pre)
         }
@@ -527,10 +631,12 @@ export class Transcript {
     const actions = h("div", "inbox-actions")
     if (item.delivery === "queue") {
       const steer = h("button", "link", "Send now") as HTMLButtonElement
+      steer.type = "button"
       steer.addEventListener("click", () => this.act(() => this.backend.setInboxDelivery(item.sessionID, item.id, "steer")))
       actions.append(steer)
     }
     const cancel = h("button", "link", "Cancel") as HTMLButtonElement
+    cancel.type = "button"
     cancel.addEventListener("click", () => this.act(() => this.backend.cancelInbox(item.sessionID, item.id)))
     actions.append(cancel)
     body.append(actions)
@@ -552,6 +658,7 @@ export class Transcript {
     const actions = h("div", "ask-actions")
     const btn = (label: string, decision: "once" | "always" | "reject", cls = "") => {
       const b = h("button", `btn ${cls}`, label) as HTMLButtonElement
+      b.type = "button"
       b.addEventListener("click", () =>
         this.act(async () => {
           await this.backend.replyPermission(req.sessionID, req.id, decision)
@@ -565,6 +672,7 @@ export class Transcript {
       return b
     }
     const everything = h("button", "btn allow-all", "Allow everything in this session") as HTMLButtonElement
+    everything.type = "button"
     everything.title = "Approve this and every future request in this session (saved on the Hermes session)"
     everything.addEventListener("click", () =>
       this.act(async () => {
@@ -576,6 +684,7 @@ export class Transcript {
     const pending = this.store.pendingPermissionCount()
     if (pending > 1) {
       const all = h("button", "link allow-pending", `Allow all ${pending} waiting requests`) as HTMLButtonElement
+      all.type = "button"
       all.addEventListener("click", () =>
         this.act(async () => {
           const n = await this.store.approveAllPending()
@@ -597,7 +706,12 @@ export class Transcript {
     const getters: Array<[FormField, () => unknown]> = []
     for (const f of form.fields) {
       if (f.hidden) continue
-      const field = h("label", "field")
+      const isGroup = f.type === "multiselect" || f.type === "external"
+      const field = h(isGroup ? "div" : "label", "field")
+      if (f.type === "multiselect") {
+        field.setAttribute("role", "group")
+        if (f.title) field.setAttribute("aria-label", f.title)
+      }
       if (f.title) field.append(h("span", "field-title", f.title))
       if (f.description) field.append(h("span", "field-desc", f.description))
       if (f.type === "boolean") {
@@ -640,7 +754,15 @@ export class Transcript {
         if (f.default !== undefined) inp.value = String(f.default)
         inp.required = !!f.required
         field.append(inp)
-        getters.push([f, () => (inp.type === "number" ? (inp.value === "" ? undefined : Number(inp.value)) : inp.value)])
+        getters.push([
+          f,
+          () => {
+            if (inp.type !== "number") return inp.value
+            if (inp.value === "") return undefined
+            const n = Number(inp.value)
+            return Number.isFinite(n) ? n : undefined
+          },
+        ])
       }
       body.append(field)
     }

@@ -148,7 +148,30 @@
   color-scheme: dark;
 }
 
-:where(.btn, .chip, .seg-btn, .icon-btn, .new-btn, .tiles-open-btn, .tiles-btn, .head-btn, .aa-toggle, a, input, select, textarea, [contenteditable]):focus-visible {
+:where(
+  button,
+  .btn,
+  .chip,
+  .seg-btn,
+  .icon-btn,
+  .new-btn,
+  .tiles-open-btn,
+  .tiles-btn,
+  .head-btn,
+  .aa-toggle,
+  .activity-head,
+  .earlier,
+  .link,
+  .pop-item,
+  .picker-item,
+  .attach-chip .x,
+  .activity-row[role="button"],
+  a,
+  input,
+  select,
+  textarea,
+  [contenteditable]
+):focus-visible {
   outline: 2px solid var(--desk-focus-ring);
   outline-offset: 2px;
 }
@@ -629,7 +652,7 @@ button {
 
 /* While a session streams, its body is a fixed window onto the latest text so
    the card (and its neighbours) never resize mid-sentence. */
-.card.working .card-body {
+.card.st-working .card-body {
   height: 92px;
 }
 
@@ -1394,6 +1417,7 @@ button {
   align-items: center;
   gap: 12px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .head-project {
@@ -1529,6 +1553,7 @@ button {
 
 .panel-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 22px clamp(18px, 6vw, 64px) 28px;
@@ -2072,7 +2097,7 @@ button {
   position: absolute;
   z-index: 10;
   min-width: 260px;
-  max-width: 380px;
+  max-width: min(380px, calc(100% - 24px));
   max-height: 60vh;
   overflow-y: auto;
   background: var(--desk-surface-2);
@@ -2094,7 +2119,8 @@ button {
   padding: 7px 9px;
 }
 
-.pop-item:hover {
+.pop-item:hover,
+.pop-item.active {
   background: var(--desk-surface-3);
 }
 
@@ -2354,8 +2380,10 @@ button {
   position: fixed;
   right: 16px;
   top: 52px;
-  z-index: 1100;
+  z-index: 1150;
   width: min(340px, calc(100vw - 32px));
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
   background: var(--desk-surface-2);
   border: 1px solid var(--desk-hairline-strong);
   border-radius: var(--desk-radius-lg);
@@ -2435,8 +2463,12 @@ button {
   .new-label,
   .chip-label,
   .brand-name,
-  .chip-action {
+  .chip-action:not(.allow) {
     display: none;
+  }
+  .panel-head {
+    flex-wrap: wrap;
+    gap: 8px 12px;
   }
   .chips {
     margin-left: 0;
@@ -2479,8 +2511,18 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .card.st-working .card-accent,
   .card.st-needs-you,
-  .mark.needs-you {
+  .mark.needs-you,
+  .chip.working .chip-dot,
+  .conn-dot,
+  .tile[data-status="needs-you"],
+  .boot-pip,
+  .boot-cursor,
+  .boot-bar::after,
+  .picker-scrim {
     animation: none;
+  }
+  .toast {
+    transition: none;
   }
   .panel.animating {
     transition-duration: 0.01s;
@@ -2496,6 +2538,7 @@ button {
 .head-btn.model {
   color: var(--text-4);
   font-size: 12.5px;
+  min-width: 0;
   max-width: 220px;
   white-space: nowrap;
   overflow: hidden;
@@ -2503,7 +2546,7 @@ button {
 }
 
 .popover.models {
-  width: 340px;
+  width: min(340px, calc(100% - 24px));
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -2519,6 +2562,10 @@ button {
   font: 13px var(--font);
   padding: 7px 9px;
   outline: none;
+}
+
+.pop-filter:focus {
+  border-color: var(--desk-focus-ring);
 }
 
 .pop-list {
@@ -2872,6 +2919,13 @@ button {
 .tile:focus-within .tile-actions {
   width: auto;
   opacity: 1;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .tile-actions {
+    width: auto;
+    opacity: 1;
+  }
 }
 
 .tile-actions .tile-btn.pin.on {
@@ -4239,6 +4293,7 @@ button {
 }
 
 .launch-mission {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -4303,6 +4358,7 @@ button {
 }
 
 .launch-box {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: rgba(30, 18, 4, 0.94);
@@ -4483,8 +4539,20 @@ button {
   color: var(--h-danger);
 }
 
+.launch-menu-input:focus {
+  border-bottom-color: var(--h-amber);
+}
+
+.launch-menu-err {
+  padding: 6px 12px;
+  font-size: 11.5px;
+  color: var(--h-danger);
+  background: rgba(251, 44, 54, 0.08);
+  border-bottom: 1px solid rgba(251, 44, 54, 0.28);
+}
+
 .launch-menu-list {
-  max-height: min(288px, 50vh);
+  max-height: min(288px, calc(100vh - 220px));
   overflow-y: auto;
   padding: 4px;
 }
@@ -4660,7 +4728,7 @@ button {
   mask-image: none;
 }
 
-.card.working .card-body,
+.card.st-working .card-body,
 .card-body.clipped {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
   mask-image: linear-gradient(to bottom, transparent 0, #000 18px);

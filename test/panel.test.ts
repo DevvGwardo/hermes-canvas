@@ -846,4 +846,171 @@ describe("SessionPanel", () => {
     await flush()
     expect(find(root, (e) => e.className.includes("popover"))).toBeUndefined() // late result dropped, nothing reappears
   })
+
+  it("queues on Tab only while running, restores attachments on failed send, and warns on live-image sends", async () => {
+    const { panel, store, prompts, setFailPrompt } = await panelFixture()
+    panel.open("s1")
+    await flush()
+    const input = panel["input"] as unknown as FakeEl
+    const attachRow = panel["attachRow"] as unknown as FakeEl
+
+    // Idle: Tab must NOT queue
+    input.value = "stay in draft"
+    input.fire("keydown", { key: "Tab", shiftKey: false, altKey: false, isComposing: false })
+    await flush()
+    expect(prompts).toEqual([])
+    expect(input.value).toBe("stay in draft")
+
+    // Running: Tab queues and failed send restores both draft and pasted image
+    store.running.add("s1")
+    input.fire("paste", {
+      clipboardData: { files: [{ type: "image/png", name: "snap.png" }] },
+      preventDefault: () => {},
+    })
+    expect(attachRow.children).toHaveLength(1)
+    setFailPrompt(true)
+    input.fire("keydown", { key: "Tab", shiftKey: false, altKey: false, isComposing: false })
+    await flush()
+    expect(input.value).toBe("stay in draft")
+    expect(attachRow.children).toHaveLength(1)
+
+    setFailPrompt(false)
+    input.fire("keydown", { key: "Tab", shiftKey: false, altKey: false, isComposing: false })
+    await flush()
+    expect(prompts).toEqual([{ id: "s1", text: "stay in draft", delivery: "queue", files: [{ name: "snap.png", uri: "data:image/png;base64,AAAA" }] }] as any)
+
+    // Live backend image-only send aborts cleanly without dropping the attachment
+    let livePrompts = 0
+    const liveBackend = {
+      kind: "live",
+      listProjects: async () => [],
+      listSessions: async () => [mk("s1", { updated: NOW - 60_000, idle: NOW - 60_000 })],
+      active: async () => new Set<string>(),
+      messages: async () => ({ data: [] }),
+      inbox: async () => [],
+      markViewed: async () => {},
+      prompt: async () => {
+        livePrompts++
+      },
+    } as unknown as Backend
+    const liveStore = new Store(liveBackend)
+    await liveStore.reload()
+    const liveHost = new FakeEl("div")
+    const livePanel = new SessionPanel(liveHost as any, liveStore, liveBackend, { setOpen() {}, cardRect: () => null } as any, () => {})
+    livePanel.open("s1")
+    await flush()
+    const liveInput = livePanel["input"] as unknown as FakeEl
+    const liveAttach = livePanel["attachRow"] as unknown as FakeEl
+    liveInput.fire("paste", {
+      clipboardData: { files: [{ type: "image/png", name: "img.png" }] },
+      preventDefault: () => {},
+    })
+    liveInput.fire("keydown", { key: "Enter", shiftKey: false, altKey: false, isComposing: false })
+    await flush()
+    expect(livePrompts).toBe(0)
+    expect(liveAttach.children).toHaveLength(1)
+    livePanel.destroy()
+  })
+
+  it("handles rename rollback, single-commit guard, model-switch rollback, reopen while closing, handleEscape, and missing clipboard", async () => {
+    const models = [
+      { id: "a1", providerID: "alpha", name: "Alpha One" },
+      { id: "b2", providerID: "beta", name: "Beta Two" },
+    ]
+    const s1 = mk("s1", { updated: NOW - 60_000, idle: NOW - 60_000 }, { model: { id: "a1", providerID: "alpha" }, title: "Old" })
+    let renameCalls = 0
+    const backend = {
+      kind: "live",
+      listProjects: async () => [],
+      listSessions: async () => [s1],
+      active: async () => new Set<string>(),
+      messages: async () => ({ data: [] }),
+      inbox: async () => [],
+      markViewed: async () => {},
+      rename: async () => {
+        renameCalls++
+        throw new Error("rename denied")
+      },
+      listModels: async () => models,
+      serverDefaultModel: async () => undefined,
+      switchModel: async () => {
+        throw new Error("switch denied")
+      },
+    } as unknown as Backend
+    const store = new Store(backend)
+    await store.reload()
+    const host = new FakeEl("div")
+    let closedCount = 0
+    const panel = new SessionPanel(host as any, store, backend, { setOpen() {}, cardRect: () => null } as any, () => void closedCount++)
+    panel.open("s1")
+    await flush()
+
+    const root = panel.el as unknown as FakeEl
+    const titleEl = find(root, (e) => e.className === "panel-title")!
+    const menuBtn = find(root, (e) => e.attrs["aria-label"] === "Session menu")!
+    const modelBtn = find(root, (e) => e.className.split(/\s+/).includes("model"))!
+
+    // Clipboard unavailable does not throw
+    ;(globalThis as any).navigator = {}
+    menuBtn.fire("click")
+    find(root, (e) => e.className.includes("popover"))!.children[2]!.fire("click")
+
+    // Rename Enter + immediate blur only submits once, collapses newlines, and rolls back on failure
+    menuBtn.fire("click")
+    find(root, (e) => e.className.includes("popover"))!.children.at(-1)!.fire("click")
+    titleEl.textContent = "Line 1\nLine 2"
+    titleEl.fire("keydown", { key: "Enter" })
+    titleEl.fire("blur")
+    expect(renameCalls).toBe(1)
+    await flush()
+    expect(store.sessions.get("s1")!.title).toBe("Old")
+
+    // Switch model rolls back session model and storage on error
+    const lsData = installStorage(undefined)
+    modelBtn.fire("click")
+    await flush()
+    const pop = find(root, (e) => e.className.includes("popover"))!
+    pop.children[1]!.children[1]!.fire("click")
+    await flush()
+    expect(store.sessions.get("s1")!.model).toEqual({ id: "a1", providerID: "alpha" })
+    expect(lsData["occ.model"]).toBeUndefined()
+
+    // handleEscape closes an open popover first, then the panel; reopen while closing cancels exit timer
+    menuBtn.fire("click")
+    expect(find(root, (e) => e.className.includes("popover"))).toBeDefined()
+    expect(panel.handleEscape()).toBe(true)
+    expect(find(root, (e) => e.className.includes("popover"))).toBeUndefined()
+    expect(panel.isOpen).toBe(true)
+
+    expect(panel.handleEscape()).toBe(true)
+    expect(root.className).toContain("leaving")
+    panel.open("s1")
+    expect(root.className).not.toContain("leaving")
+    jest.advanceTimersByTime(500)
+    expect(closedCount).toBe(0)
+    expect(panel.isOpen).toBe(true)
+
+    // Popover keyboard navigation (ArrowDown/ArrowUp/Escape), model popover ArrowDown+Enter, and pointerdown dismiss
+    menuBtn.fire("click")
+    const menuPop = find(root, (e) => e.className.includes("popover"))!
+    const focusedItems: FakeEl[] = []
+    menuPop.children.forEach((btn) => {
+      btn.focus = () => void focusedItems.push(btn)
+    })
+    menuPop.fire("keydown", { key: "ArrowDown" })
+    expect(focusedItems[0]).toBe(menuPop.children[0])
+    menuPop.fire("keydown", { key: "Escape" })
+    expect(panel.hasPopover()).toBe(false)
+
+    // Model popover ArrowDown selects second model row
+    modelBtn.fire("click")
+    await flush()
+    const modPop = find(root, (e) => e.className.includes("popover"))!
+    modPop.children[0]!.fire("keydown", { key: "ArrowDown" })
+    expect(modPop.children[1]!.children[1]!.className).toContain("active")
+    root.fire("pointerdown")
+    expect(panel.hasPopover()).toBe(false)
+
+    panel.destroy()
+  })
 })

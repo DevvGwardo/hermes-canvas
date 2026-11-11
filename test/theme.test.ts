@@ -198,5 +198,25 @@ describe("Hermes brand tokens in styles.css", () => {
     // The splash ships as static markup so it paints before the module loads.
     expect(html).toContain('class="boot-pip"');
     expect(html).toContain('class="boot-hermes"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('aria-busy="true"');
+  });
+
+  test("CSS layout/accessibility fixes and card st-working selector stay intact", async () => {
+    const text = await css();
+    // C12: Card uses st-working class, never .card.working
+    expect(text).toContain(".card.st-working .card-body");
+    expect(text).not.toContain(".card.working .card-body");
+    // Touch devices keep tile actions visible
+    expect(text).toContain("@media (hover: none), (pointer: coarse)");
+    // Panel flex overflow & header responsiveness & popover/launchpad/help fixes
+    expect(text).toContain(".panel-scroll {");
+    expect(text).toContain("min-height: 0");
+    expect(text).toContain("z-index: 1150");
+    expect(text).toContain(".launch-box {");
+    expect(text).toContain(".launch-menu-err");
+    expect(text).toContain(".activity-row[role=\"button\"]");
+    expect(text).toContain("):focus-visible {");
   });
 });

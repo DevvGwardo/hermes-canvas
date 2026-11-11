@@ -107,6 +107,7 @@ interface DestOption {
 
 export class Launchpad {
   private el: HTMLElement
+  private box: HTMLElement
   private feed: HTMLElement
   private input: HTMLTextAreaElement
   private sendBtn: HTMLButtonElement
@@ -116,6 +117,9 @@ export class Launchpad {
   private note: HTMLElement
   private menu?: HTMLElement
   private menuOutside?: (e: PointerEvent) => void
+  private menuOutsideTimer?: ReturnType<typeof setTimeout>
+  private unsub: () => void
+  private feedTimer: ReturnType<typeof setInterval>
   private missions = readMissions()
   private team = readTeam()
   private directory = readDir()
@@ -137,6 +141,7 @@ export class Launchpad {
     this.feed.hidden = true
 
     const box = h("div", "launch-box")
+    this.box = box
 
     const controls = h("div", "launch-controls")
     this.destBtn = h("button", "launch-dest") as HTMLButtonElement
@@ -189,8 +194,26 @@ export class Launchpad {
     host.append(this.el)
 
     this.refresh()
-    this.store.on({ structure: () => this.refresh() })
-    setInterval(() => this.renderFeed(), 1000)
+    this.unsub = this.store.on({
+      structure: () => this.refresh(),
+      cards: (ids) => {
+        if (this.missions.some((m) => ids.has(m.id))) this.renderFeed()
+      },
+    })
+    this.feedTimer = setInterval(() => this.renderFeed(), 1000)
+  }
+
+  destroy() {
+    this.unsub()
+    clearInterval(this.feedTimer)
+    this.closeMenu()
+    this.el.remove()
+  }
+
+  closeOpenMenu(): boolean {
+    if (!this.menu) return false
+    this.closeMenu()
+    return true
   }
 
   /** Focus the task box (the `L` shortcut). */
@@ -283,9 +306,9 @@ export class Launchpad {
     if (!original) return
 
     const mention = parseMention(original, this.store.groups())
-    if (mention.directory) this.setDirectory(mention.directory, true)
     const task = mention.text
     if (!task) return
+    if (mention.directory) this.setDirectory(mention.directory, true)
 
     const dir = this.currentDir()
     if (!dir) {
@@ -410,11 +433,14 @@ export class Launchpad {
     input.setAttribute("aria-label", "Project or folder")
     input.autocomplete = "off"
     input.spellcheck = false
+    const err = h("div", "launch-menu-err")
+    err.setAttribute("role", "alert")
+    err.hidden = true
     const list = h("div", "launch-menu-list")
     list.setAttribute("role", "listbox")
     list.setAttribute("aria-label", "Projects and folders")
-    menu.append(input, list)
-    this.el.append(menu)
+    menu.append(input, err, list)
+    this.box.append(menu)
     this.menu = menu
     this.destBtn.setAttribute("aria-expanded", "true")
 
@@ -497,7 +523,9 @@ export class Launchpad {
         } catch {
           if (this.menu !== menu) return
           input.classList.add("bad")
-          input.placeholder = "That folder isn't readable. Pick another."
+          err.textContent = "That folder isn't readable. Pick another."
+          err.hidden = false
+          toast("That folder isn't readable")
           input.focus()
           return
         }
@@ -541,14 +569,16 @@ export class Launchpad {
 
     input.addEventListener("input", () => {
       input.classList.remove("bad")
-      input.placeholder = "Filter projects or type a folder path"
+      err.hidden = true
+      err.textContent = ""
       collect(input.value)
     })
     input.addEventListener("keydown", onKey)
     collect("")
     input.focus()
     this.menuOutside = outside
-    setTimeout(() => {
+    this.menuOutsideTimer = setTimeout(() => {
+      this.menuOutsideTimer = undefined
       if (this.menu === menu) document.addEventListener("pointerdown", outside)
     }, 0)
     menu.addEventListener("pointerdown", (e) => e.stopPropagation())
@@ -557,6 +587,10 @@ export class Launchpad {
   private closeMenu() {
     const menu = this.menu
     if (!menu) return
+    if (this.menuOutsideTimer) {
+      clearTimeout(this.menuOutsideTimer)
+      this.menuOutsideTimer = undefined
+    }
     if (this.menuOutside) document.removeEventListener("pointerdown", this.menuOutside)
     this.menuOutside = undefined
     menu.remove()
@@ -566,8 +600,13 @@ export class Launchpad {
 
   private expand(q: string) {
     if (!this.opts.home) return q
-    if (q === "~") return this.opts.home
-    if (q.startsWith("~/") || q.startsWith("~\\")) return this.opts.home + q.slice(1)
+    const base = this.opts.home.replace(/[\\/]+$/, "") || "/"
+    const sep = /^[A-Za-z]:|^\\\\/.test(base) ? "\\" : "/"
+    if (q === "~") return base
+    if (q.startsWith("~/") || q.startsWith("~\\")) {
+      const rest = q.slice(2).replace(/[\\/]/g, sep)
+      return (base === "/" ? "" : base) + sep + rest
+    }
     return q
   }
 }
