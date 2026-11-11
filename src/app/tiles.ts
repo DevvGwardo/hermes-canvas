@@ -341,7 +341,7 @@ export class TilesView {
     back.type = "button"
     back.title = "Back to the canvas (Esc)"
     back.addEventListener("click", () => this.close(), { signal: this.ac.signal } as AddEventListenerOptions)
-    tools.append(subs, autoApproveToggle(store), newBtn, back)
+    tools.append(subs, autoApproveToggle(store, { signal: this.ac.signal }), newBtn, back)
     bar.append(title, tools)
 
     this.grid = h("div", "tiles-grid")
