@@ -11,7 +11,8 @@
 //   HERMES_BIN   `hermes` executable (default: resolved from PATH)
 
 import { Database } from "bun:sqlite"
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { randomBytes } from "node:crypto"
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -22,10 +23,8 @@ export interface CanvasEvent {
   data: any
 }
 
-type Listener = (ev: CanvasEvent) => void
-
 let seq = 0
-const uid = (p: string) => `${p}_${Date.now().toString(36)}${(seq++).toString(36)}`
+export const uid = (p: string) => `${p}_${Date.now().toString(36)}${(seq++).toString(36)}`
 
 export function hermesHome(): string {
   const env = process.env.HERMES_HOME
@@ -42,15 +41,21 @@ export function dbPath(): string {
 }
 
 export function hermesBin(): string {
-  return process.env.HERMES_BIN ?? "hermes"
+  const env = process.env.HERMES_BIN?.trim()
+  return env || "hermes"
 }
 
 /** Split HERMES_BIN so tests (or wrappers) can point at `bun fake-hermes.ts`. */
 function hermesArgv(): string[] {
   const bin = hermesBin()
+  try {
+    if (statSync(bin).isFile()) return [bin]
+  } catch { /* may be a command + args or bare command name */ }
   // Quoted segments stay together: bun "/path/with space/fake.ts"
-  const parts = bin.match(/(?:[^\s"]+|"[^"]*")+/g) ?? [bin]
-  return parts.map((p) => (p.startsWith('"') && p.endsWith('"') ? p.slice(1, -1) : p))
+  const parts = bin.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [bin]
+  return parts.map((p) =>
+    (p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'")) ? p.slice(1, -1) : p,
+  )
 }
 
 interface ChatLauncher {
@@ -78,7 +83,7 @@ function launcherCacheKey(): string {
  * runtime: HERMES_BIN wins when set.
  */
 function resolveChatLauncher(): Promise<ChatLauncher> {
-  if (process.env.HERMES_BIN) return Promise.resolve({ argv: hermesArgv() })
+  if (process.env.HERMES_BIN?.trim()) return Promise.resolve({ argv: hermesArgv() })
   const key = launcherCacheKey()
   if (!chatLauncher || chatLauncher.key !== key) {
     chatLauncher = { key, promise: (async (): Promise<ChatLauncher> => {
@@ -86,27 +91,48 @@ function resolveChatLauncher(): Promise<ChatLauncher> {
     try {
       const { Glob } = await import("bun")
       const home = hermesHome()
-      // Site-packages dir from `hermes --version` ("Install directory: …").
-      const ver = await runRaw(["hermes", "--version"], 15_000)
-      const siteMatch = `${ver.out}\n${ver.err}`.match(/Install directory:\s*(.+)/)
-      const site = process.env.HERMES_SITE_PACKAGES ?? siteMatch?.[1]?.trim()
+      let site = process.env.HERMES_SITE_PACKAGES?.trim()
+      if (!site) {
+        // Site-packages dir from `hermes --version` ("Install directory: …").
+        const ver = await runRaw(["hermes", "--version"], 15_000)
+        const siteMatch = `${ver.out}\n${ver.err}`.match(/Install directory:\s*(.+)/)
+        site = siteMatch?.[1]?.trim()
+      }
       if (!site) return plain
       // Candidate interpreters: explicit > python owning site-packages >
       // PATH pythons > Hermes-managed python. Each must import the agent
       // AND its native wheels (pydantic_core) — the managed 3.14 cannot use
       // wheels built for other versions, which is exactly the failure mode
       // this guards against.
+      const seen = new Set<string>()
       const cands: string[] = []
-      if (process.env.HERMES_PYTHON) cands.push(process.env.HERMES_PYTHON)
-      cands.push(join(dirname(site), "..", "python.exe"), join(dirname(site), "..", "bin", "python3"))
-      cands.push("python3", "python")
-      const glob = new Glob("python-*/python.exe")
+      const pushCand = (p?: string) => {
+        const v = p?.trim()
+        if (v && !seen.has(v)) {
+          seen.add(v)
+          cands.push(v)
+        }
+      }
+      pushCand(process.env.HERMES_PYTHON)
+      pushCand(join(dirname(site), "..", "python.exe"))
+      pushCand(join(dirname(site), "..", "Scripts", "python.exe"))
+      pushCand(join(dirname(site), "..", "..", "bin", "python3"))
+      pushCand(join(dirname(site), "..", "bin", "python3"))
+      pushCand("python3")
+      pushCand("python")
+      const patterns =
+        process.platform === "win32"
+          ? ["python-*/python.exe", "python-*/Scripts/python.exe"]
+          : ["python-*/bin/python3", "python-*/bin/python", "python-*/python"]
       const managed: string[] = []
-      try {
-        for await (const f of glob.scan({ cwd: join(home, "tools"), absolute: true, onlyFiles: true })) managed.push(f)
-      } catch { /* no tools dir */ }
+      for (const pattern of patterns) {
+        try {
+          const glob = new Glob(pattern)
+          for await (const f of glob.scan({ cwd: join(home, "tools"), absolute: true, onlyFiles: true })) managed.push(f)
+        } catch { /* no tools dir */ }
+      }
       managed.sort().reverse()
-      cands.push(...managed)
+      for (const m of managed) pushCand(m)
       const env = { PYTHONPATH: site, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" }
       for (const py of cands) {
         try {
@@ -127,20 +153,27 @@ function resolveChatLauncher(): Promise<ChatLauncher> {
 
 async function runRaw(cmd: string[], timeoutMs: number, env?: Record<string, string>) {
   const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: { ...process.env, ...env } })
-  const timer = setTimeout(() => proc.kill(), timeoutMs)
-  const [out, err] = await Promise.all([
-    proc.stdout instanceof ReadableStream ? new Response(proc.stdout).text() : Promise.resolve(""),
-    proc.stderr instanceof ReadableStream ? new Response(proc.stderr).text() : Promise.resolve(""),
-  ])
-  await proc.exited
-  clearTimeout(timer)
-  return { code: proc.exitCode ?? 1, out: out.trim(), err: err.trim() }
+  const timer = setTimeout(() => {
+    try { proc.kill() } catch { /* ignore */ }
+  }, timeoutMs)
+  try {
+    const [out, err] = await Promise.all([
+      proc.stdout instanceof ReadableStream ? new Response(proc.stdout).text() : Promise.resolve(""),
+      proc.stderr instanceof ReadableStream ? new Response(proc.stderr).text() : Promise.resolve(""),
+    ])
+    await proc.exited
+    return { code: proc.exitCode ?? 1, out: out.trim(), err: err.trim() }
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function openDb(readonly: boolean): Database {
-  const db = readonly ? new Database(dbPath(), { readonly: true }) : new Database(dbPath());
+  const db = readonly
+    ? new Database(dbPath(), { readonly: true })
+    : new Database(dbPath(), { create: false, readwrite: true })
   try {
-    db.exec("PRAGMA busy_timeout = 5000");
+    db.exec("PRAGMA busy_timeout = 5000")
   } catch { /* ignore */ }
   return db
 }
@@ -173,6 +206,8 @@ interface SessionRow {
   hidden: number | null
 }
 
+const ALLOW_ALL_RULE = { action: "*", resource: "*", effect: "allow" as const }
+
 export interface CanvasSession {
   id: string
   parentID?: string
@@ -182,10 +217,17 @@ export interface CanvasSession {
   cost: number
   tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
   outcome?: "succeeded" | "failed" | "interrupted"
-  time: { created: number; updated: number; idle?: number; viewed?: number }
+  time: { created: number; updated: number; idle?: number; viewed?: number; archived?: number }
   title?: string
   location: { directory: string }
-  permissions?: null
+  permissions?: Array<{ action: string; resource: string; effect: "allow" | "deny" | "ask" }> | null
+}
+
+export function mapOutcome(endReason: string | null): "succeeded" | "failed" | "interrupted" {
+  const r = (endReason ?? "").trim()
+  if (/(fail|error|crash|exception|timeout|timed_out)/i.test(r)) return "failed"
+  if (/(interrupt|cancel|abort|stop|sigint|sigterm|kill)/i.test(r)) return "interrupted"
+  return "succeeded"
 }
 
 export function sessionDir(r: Pick<SessionRow, "git_repo_root" | "cwd" | "source">): string {
@@ -219,16 +261,18 @@ const ms = (v: number | null): number | undefined =>
 
 export function mapSession(
   r: SessionRow,
-  extra?: { lastMsgAt?: number; running?: boolean; viewed?: number },
+  extra?: { lastMsgAt?: number; running?: boolean; viewed?: number; yolo?: boolean },
 ): CanvasSession {
   const dir = sessionDir(r)
   const created = ms(r.started_at) ?? Date.now()
-  const updated = extra?.lastMsgAt ?? created
+  const updated = extra?.lastMsgAt ?? ms(r.ended_at) ?? created
   const ended = r.ended_at != null || r.end_reason != null
   // A session that ended (or was reaped) is done; a live one with no running
   // turn is idle-but-open, so the canvas shows it as to-review/done rather
   // than stuck working.
   const idle = extra?.running ? undefined : ended || extra?.lastMsgAt ? (extra?.lastMsgAt ?? ms(r.ended_at) ?? created) : undefined
+  const archived = r.archived ? (ms(r.ended_at) ?? created) : undefined
+  const yolo = extra?.yolo ?? sessionYolo.has(r.id)
   return {
     id: r.id,
     parentID: r.parent_session_id ?? undefined,
@@ -242,11 +286,11 @@ export function mapSession(
       reasoning: s(r.reasoning_tokens),
       cache: { read: s(r.cache_read_tokens), write: s(r.cache_write_tokens) },
     },
-    outcome: ended ? "succeeded" : undefined,
-    time: { created, updated, idle, viewed: extra?.viewed },
+    outcome: ended ? mapOutcome(r.end_reason) : undefined,
+    time: { created, updated, idle, viewed: extra?.viewed, ...(archived !== undefined ? { archived } : {}) },
     title: r.title ?? undefined,
     location: { directory: dir },
-    permissions: null,
+    permissions: yolo ? [ALLOW_ALL_RULE] : null,
   }
 }
 
@@ -333,8 +377,11 @@ export function mapMessages(rows: MessageRow[], agent: string, model: { id: stri
     return currentAssistant
   }
 
+  let lastTs = 0
   for (const r of asc) {
-    const ts = ms(r.timestamp) ?? Date.now()
+    const parsedTs = ms(r.timestamp)
+    if (parsedTs !== undefined) lastTs = parsedTs
+    const ts = parsedTs ?? lastTs
     if (r.role === "user") {
       currentAssistant = undefined
       out.push({ type: "user", id: `hm_${r.id}`, time: { created: ts }, text: r.content ?? "" })
@@ -396,9 +443,10 @@ function lastMsgMap(db: Database): Map<string, number> {
 }
 
 export function listSessions(max: number, viewed: Map<string, number>, running: Set<string>): CanvasSession[] {
+  const limit = Number.isFinite(max) && max > 0 ? Math.min(Math.floor(max), 600) : 600
   const db = openDb(true)
   try {
-    const rows = db.query(`SELECT ${SESSION_COLS} FROM sessions WHERE COALESCE(archived,0)=0 AND COALESCE(hidden,0)=0 ORDER BY started_at DESC LIMIT ?`).all(max) as SessionRow[]
+    const rows = db.query(`SELECT ${SESSION_COLS} FROM sessions WHERE COALESCE(archived,0)=0 AND COALESCE(hidden,0)=0 ORDER BY started_at DESC LIMIT ?`).all(limit) as SessionRow[]
     const last = lastMsgMap(db)
     return rows.map((r) =>
       mapSession(r, { lastMsgAt: last.get(r.id), running: running.has(r.id), viewed: viewed.get(r.id) }),
@@ -419,6 +467,17 @@ export function getSession(id: string, viewed: Map<string, number>, running: Set
       if (row && typeof row.t === "number") last = Math.round(row.t * 1000)
     } catch { /* ignore */ }
     return mapSession(r, { lastMsgAt: last, running: running.has(id), viewed: viewed.get(id) })
+  } finally {
+    db.close()
+  }
+}
+
+export function getSessionModel(id: string): string | undefined {
+  const db = openDb(true)
+  try {
+    const r = db.query("SELECT model FROM sessions WHERE id = ?").get(id) as { model: string | null } | null
+    const m = r?.model?.trim()
+    return m && m !== "hermes" ? m : undefined
   } finally {
     db.close()
   }
@@ -449,6 +508,12 @@ export function listProjects(): Array<{ id: string; name: string; canonical: str
 }
 
 export function sessionMessages(id: string, limit: number, cursor?: string): { data: any[]; cursor?: { next?: string | null } } {
+  const pageSize = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 200) : 100
+  let beforeId: number | undefined
+  if (cursor !== undefined && cursor !== "") {
+    if (!/^\d+$/.test(cursor)) throw new RangeError("invalid cursor")
+    beforeId = Number(cursor)
+  }
   const db = openDb(true)
   try {
     const sess = db.query("SELECT source, model, billing_provider FROM sessions WHERE id = ?").get(id) as {
@@ -459,56 +524,59 @@ export function sessionMessages(id: string, limit: number, cursor?: string): { d
     const agent = sess.source ?? "hermes"
     const sel = `SELECT id, role, content, tool_call_id, tool_calls, tool_name, timestamp, finish_reason, reasoning
          FROM messages WHERE session_id = ?`
-    const page = (before?: string, n?: number): MessageRow[] =>
-      (before
-        ? db.query(`${sel} AND id < ? ORDER BY id DESC LIMIT ?`).all(id, Number(before), n ?? limit)
-        : db.query(`${sel} ORDER BY id DESC LIMIT ?`).all(id, n ?? limit)) as MessageRow[]
-    let rows = page(cursor)
+    const page = (before?: number, n?: number): MessageRow[] =>
+      (before !== undefined
+        ? db.query(`${sel} AND id < ? ORDER BY id DESC LIMIT ?`).all(id, before, n ?? pageSize)
+        : db.query(`${sel} ORDER BY id DESC LIMIT ?`).all(id, n ?? pageSize)) as MessageRow[]
+    let rows = page(beforeId)
     // A page can start mid-turn (oldest rows are tool results whose assistant
     // turn is older). Extend backward to the turn start so tool rows always
     // fold into their assistant message instead of orphan wrappers.
     for (let guard = 0; rows.length > 0 && rows[rows.length - 1].role === "tool" && guard < 4; guard++) {
-      const more = page(String(rows[rows.length - 1].id), 8)
+      const more = page(rows[rows.length - 1].id, 8)
       if (!more.length) break
       rows = rows.concat(more)
     }
     const data = mapMessages(rows, agent, model)
     // Cursor over *canvas* messages is awkward because tool rows fold into
     // assistant turns; page over raw row ids instead: next = oldest raw id.
-    const next = rows.length >= limit && rows.length ? String(rows[rows.length - 1].id) : null
+    const next = rows.length >= pageSize && rows.length ? String(rows[rows.length - 1].id) : null
     return next ? { data, cursor: { next } } : { data }
   } finally {
     db.close()
   }
 }
 
-export function searchSessions(query: string, max = 200): CanvasSession[] {
+export function searchSessions(
+  query: string,
+  max = 200,
+  viewed?: Map<string, number>,
+  running?: Set<string>,
+): CanvasSession[] {
+  const limit = Number.isFinite(max) && max > 0 ? Math.min(Math.floor(max), 600) : 200
   const db = openDb(true)
   try {
     const like = `%${query.replace(/[%_\\]/g, (c) => `\\${c}`)}%`
-    const rows = db.query(
-      `SELECT ${SESSION_COLS} FROM sessions WHERE COALESCE(archived,0)=0 AND COALESCE(hidden,0)=0
-       AND (title LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\' OR COALESCE(cwd,'') LIKE ? ESCAPE '\\'
-            OR COALESCE(git_repo_root,'') LIKE ? ESCAPE '\\' OR id IN (SELECT session_id FROM messages_fts WHERE messages_fts MATCH ? LIMIT 200))
-       ORDER BY started_at DESC LIMIT ?`,
-    ).all(like, like, like, like, query, max) as SessionRow[]
-    const last = lastMsgMap(db)
-    return rows.map((r) => mapSession(r, { lastMsgAt: last.get(r.id) }))
-  } catch {
-    // FTS5 MATCH can throw on query syntax; fall back to LIKE-only.
-    const db2 = openDb(true)
+    let rows: SessionRow[]
     try {
-      const like = `%${query}%`
-      const rows = db2.query(
+      rows = db.query(
         `SELECT ${SESSION_COLS} FROM sessions WHERE COALESCE(archived,0)=0 AND COALESCE(hidden,0)=0
-         AND (title LIKE ? OR id LIKE ? OR COALESCE(cwd,'') LIKE ? OR COALESCE(git_repo_root,'') LIKE ?)
+         AND (title LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\' OR COALESCE(cwd,'') LIKE ? ESCAPE '\\'
+              OR COALESCE(git_repo_root,'') LIKE ? ESCAPE '\\' OR id IN (SELECT session_id FROM messages_fts WHERE messages_fts MATCH ? LIMIT 200))
          ORDER BY started_at DESC LIMIT ?`,
-      ).all(like, like, like, like, max) as SessionRow[]
-      const last = lastMsgMap(db2)
-      return rows.map((r) => mapSession(r, { lastMsgAt: last.get(r.id) }))
-    } finally {
-      db2.close()
+      ).all(like, like, like, like, query, limit) as SessionRow[]
+    } catch {
+      // FTS5 MATCH can throw on query syntax or missing messages_fts table; fall back to LIKE-only.
+      rows = db.query(
+        `SELECT ${SESSION_COLS} FROM sessions WHERE COALESCE(archived,0)=0 AND COALESCE(hidden,0)=0
+         AND (title LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\' OR COALESCE(cwd,'') LIKE ? ESCAPE '\\' OR COALESCE(git_repo_root,'') LIKE ? ESCAPE '\\')
+         ORDER BY started_at DESC LIMIT ?`,
+      ).all(like, like, like, like, limit) as SessionRow[]
     }
+    const last = lastMsgMap(db)
+    return rows.map((r) =>
+      mapSession(r, { lastMsgAt: last.get(r.id), running: running?.has(r.id), viewed: viewed?.get(r.id) }),
+    )
   } finally {
     db.close()
   }
@@ -536,6 +604,20 @@ export function listModels(): Array<{ id: string; providerID: string; name: stri
   return [...seen.values()]
 }
 
+function cleanYamlScalar(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ""
+  if (trimmed.startsWith('"')) {
+    const end = trimmed.indexOf('"', 1)
+    return (end > 0 ? trimmed.slice(1, end) : trimmed.slice(1)).trim()
+  }
+  if (trimmed.startsWith("'")) {
+    const end = trimmed.indexOf("'", 1)
+    return (end > 0 ? trimmed.slice(1, end) : trimmed.slice(1)).trim()
+  }
+  return trimmed.replace(/(?:^|\s+)#.*$/, "").trim()
+}
+
 function modelsFromConfig(): Array<{ id: string; providerID: string; name: string }> {
   // Minimal YAML scan: inside `custom_providers:`, each `- name: <provider>`
   // starts a block whose `models:` map keys are model ids.
@@ -549,20 +631,33 @@ function modelsFromConfig(): Array<{ id: string; providerID: string; name: strin
   let curProvider: string | undefined
   let inModels = false
   let inCustom = false
-  for (const line of cfg.split("\n")) {
-    if (/^custom_providers:/.test(line)) { inCustom = true; continue }
-    if (inCustom && /^[A-Za-z]/.test(line)) break
+  let modelsIndent = 0
+  for (const line of cfg.split(/\r?\n/)) {
+    if (!line.trim() || /^\s*#/.test(line)) continue
+    if (/^custom_providers:\s*(?:#.*)?$/.test(line)) { inCustom = true; continue }
+    if (inCustom && /^[A-Za-z_]/.test(line)) break
     if (!inCustom) continue
-    const pm = line.match(/^  - name:\s*(.+?)\s*$/)
-    if (pm) { curProvider = pm[1]; inModels = false; continue }
-    if (/^    models:\s*$/.test(line)) { inModels = true; continue }
+    const pm = line.match(/^\s*-\s*name:\s*(.+)$/)
+    if (pm) {
+      curProvider = cleanYamlScalar(pm[1]) || undefined
+      inModels = false
+      continue
+    }
+    const mmHdr = line.match(/^(\s+)models:\s*(?:#.*)?$/)
+    if (mmHdr && curProvider) {
+      modelsIndent = mmHdr[1].length
+      inModels = true
+      continue
+    }
     if (inModels && curProvider) {
-      if (/^    \S/.test(line)) inModels = false
-      else {
-        const mm = line.match(/^      ([^:#\s][^:]*):/)
+      const indent = line.match(/^(\s*)/)![1].length
+      if (indent <= modelsIndent) {
+        inModels = false
+      } else {
+        const mm = line.match(/^\s+([^:#\s][^:]*):/)
         if (mm) {
-          const id = mm[1].trim()
-          out.push({ id, providerID: curProvider, name: `${curProvider}/${id}` })
+          const id = cleanYamlScalar(mm[1])
+          if (id) out.push({ id, providerID: curProvider, name: `${curProvider}/${id}` })
         }
       }
     }
@@ -573,29 +668,47 @@ function modelsFromConfig(): Array<{ id: string; providerID: string; name: strin
 export function defaultModel(): { id: string; providerID: string; name: string } | undefined {
   try {
     const cfg = readFileSync(join(hermesHome(), "config.yaml"), "utf8")
-    const m = cfg.match(/^  default:\s*(.+?)\s*$/m)
-    if (m) {
-      const raw = m[1]
-      const slash = raw.indexOf("/")
-      if (slash > 0) return { id: raw.slice(slash + 1), providerID: raw.slice(0, slash), name: raw }
-      return { id: raw, providerID: "custom", name: raw }
+    let inModel = false
+    for (const line of cfg.split(/\r?\n/)) {
+      if (!line.trim() || /^\s*#/.test(line)) continue
+      if (/^model:\s*(?:#.*)?$/.test(line)) {
+        inModel = true
+        continue
+      }
+      if (inModel && /^\S/.test(line)) break
+      if (!inModel) continue
+      const m = line.match(/^\s+default:\s*(.+)$/)
+      if (m) {
+        const raw = cleanYamlScalar(m[1])
+        if (!raw || raw === "null" || raw === "~") return undefined
+        const slash = raw.indexOf("/")
+        if (slash > 0) return { id: raw.slice(slash + 1), providerID: raw.slice(0, slash), name: raw }
+        return { id: raw, providerID: "custom", name: raw }
+      }
     }
   } catch { /* ignore */ }
   return undefined
 }
 
 export function listFolders(path: string): string[] {
-  const st = statSync(path)
+  if (!path.trim()) throw new Error("missing path")
+  const target = /^[A-Za-z]:$/.test(path) ? `${path}\\` : path
+  const st = statSync(target)
   if (!st.isDirectory()) throw new Error("not a directory")
-  return readdirSync(path)
-    .map((n: string) => join(path, n).replace(/\/+$/, ""))
-    .filter((p: string) => {
-      try {
-        return statSync(p).isDirectory()
-      } catch {
-        return false
+  return readdirSync(target, { withFileTypes: true })
+    .filter((ent) => {
+      if (ent.isDirectory()) return true
+      if (ent.isSymbolicLink()) {
+        try {
+          return statSync(join(target, ent.name)).isDirectory()
+        } catch {
+          return false
+        }
       }
+      return false
     })
+    .map((ent) => join(target, ent.name).replace(/[\\/]+$/, ""))
+    .sort((a, b) => a.localeCompare(b))
 }
 
 // ---------------------------------------------------------------------------
@@ -610,11 +723,16 @@ async function runCli(args: string[], opts?: { timeoutMs?: number; cwd?: string 
     cwd: opts?.cwd,
     env: { ...process.env },
   })
-  const timer = setTimeout(() => proc.kill(), opts?.timeoutMs ?? 30_000)
-  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()])
-  await proc.exited
-  clearTimeout(timer)
-  return { code: proc.exitCode ?? 1, out: out.trim(), err: err.trim() }
+  const timer = setTimeout(() => {
+    try { proc.kill() } catch { /* ignore */ }
+  }, opts?.timeoutMs ?? 30_000)
+  try {
+    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()])
+    await proc.exited
+    return { code: proc.exitCode ?? 1, out: out.trim(), err: err.trim() }
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export async function renameSession(id: string, title: string): Promise<void> {
@@ -622,27 +740,36 @@ export async function renameSession(id: string, title: string): Promise<void> {
   if (r.code !== 0) throw new Error(r.err || `rename failed (${r.code})`)
 }
 
-export function setSessionModel(id: string, model: string): void {
-  const db = new Database(dbPath())
+export function setSessionModel(id: string, model: string): boolean {
+  const db = openDb(false)
   try {
-    db.exec("PRAGMA busy_timeout = 5000")
-    db.query("UPDATE sessions SET model = ? WHERE id = ?").run(model, id)
+    const res = db.query("UPDATE sessions SET model = ? WHERE id = ?").run(model, id) as { changes?: number }
+    return (res?.changes ?? 0) > 0
   } finally {
     db.close()
   }
 }
 
-export function createSessionRow(directory: string, model?: string, title?: string): CanvasSession {
-  const rand = Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0")
+const locallyCreated = new Map<string, number>()
+
+function markLocallyCreated(id: string) {
+  const now = Date.now()
+  locallyCreated.set(id, now + 30_000)
+  for (const [k, exp] of locallyCreated) {
+    if (exp < now) locallyCreated.delete(k)
+  }
+}
+
+export function createSessionRow(directory: string, model?: string, title?: string, yolo?: boolean): CanvasSession {
+  const rand = randomBytes(4).toString("hex")
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, "0")
   const id =
     `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +
     `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}_${rand}`
   const started = Date.now() / 1000
-  const db = new Database(dbPath())
+  const db = openDb(false)
   try {
-    db.exec("PRAGMA busy_timeout = 5000")
     db.query(
       `INSERT INTO sessions (id, source, model, title, cwd, started_at, message_count, tool_call_count,
         input_tokens, output_tokens, archived, created_source)
@@ -651,6 +778,8 @@ export function createSessionRow(directory: string, model?: string, title?: stri
   } finally {
     db.close()
   }
+  markLocallyCreated(id)
+  if (yolo) setSessionYolo(id, true)
   const s = getSession(id, new Map(), new Set())
   if (!s) throw new Error("session row was not created")
   return s
@@ -676,10 +805,15 @@ export function loadViewed(): Map<string, number> {
 }
 
 export function saveViewed(m: Map<string, number>): void {
+  const p = viewedPath()
+  const tmp = `${p}.tmp.${process.pid}.${(seq++).toString(36)}`
   try {
-    mkdirSync(dirname(viewedPath()), { recursive: true })
-    writeFileSync(viewedPath(), JSON.stringify(Object.fromEntries(m)))
-  } catch { /* best effort */ }
+    mkdirSync(dirname(p), { recursive: true })
+    writeFileSync(tmp, JSON.stringify(Object.fromEntries(m)))
+    renameSync(tmp, p)
+  } catch {
+    try { unlinkSync(tmp) } catch { /* ignore */ }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -691,14 +825,45 @@ export interface PromptHandle {
   proc: ReturnType<typeof Bun.spawn>
   assistantID: string
   startedAt: number
+  interrupted?: boolean
+  exited: Promise<void>
 }
 
 const runningProcs = new Map<string, PromptHandle>()
+const startingPromises = new Map<string, Promise<void>>()
+const abortedStarts = new Set<string>()
+const managedWatermarks = new Map<string, number>()
 let autoApproveAll = false
 const sessionYolo = new Set<string>()
 
 export function runningSessionIDs(): Set<string> {
-  return new Set(runningProcs.keys())
+  const out = new Set<string>()
+  for (const [id, h] of runningProcs) {
+    if (!h.interrupted) out.add(id)
+  }
+  return out
+}
+
+export function isPromptBusy(id: string): boolean {
+  return startingPromises.has(id) || runningProcs.has(id)
+}
+
+export async function waitForPromptExit(id: string): Promise<void> {
+  const pendingStart = startingPromises.get(id)
+  if (pendingStart) await pendingStart.catch(() => {})
+  const active = runningProcs.get(id)
+  if (active) await active.exited.catch(() => {})
+}
+
+export async function interruptAllPrompts(): Promise<void> {
+  for (const id of startingPromises.keys()) abortedStarts.add(id)
+  const exits: Promise<void>[] = []
+  for (const [, h] of runningProcs) {
+    h.interrupted = true
+    try { h.proc.kill() } catch { /* ignore */ }
+    exits.push(h.exited.catch(() => {}))
+  }
+  await Promise.all(exits)
 }
 
 export function setAutoApproveAll(v: boolean): void {
@@ -720,41 +885,126 @@ function winPath(p: string): string {
   return p
 }
 
+function recordManagedWatermark(id: string): void {
+  let db: Database | undefined
+  try {
+    db = openDb(true)
+    const row = db.query("SELECT MAX(id) m FROM messages WHERE session_id = ?").get(id) as { m: number | null } | null
+    if (row && typeof row.m === "number") {
+      managedWatermarks.set(id, Math.max(managedWatermarks.get(id) ?? 0, row.m))
+    }
+  } catch { /* ignore */ } finally {
+    db?.close()
+  }
+}
+
 export async function startPrompt(
   id: string,
   text: string,
-  opts: { emit: (ev: CanvasEvent) => void; model?: string; cwd?: string },
+  opts: {
+    emit: (ev: CanvasEvent) => void
+    model?: string
+    cwd?: string
+    onSettled?: (reason: "ended" | "interrupted") => void
+  },
 ): Promise<void> {
-  if (runningProcs.has(id)) throw new Error("session is already running")
-  const launcher = await resolveChatLauncher()
-  const argv = [...launcher.argv, "chat", "--resume", id, "-q", text, "--format", "stream-json"]
-  if (opts.model) argv.push("-m", opts.model)
-  if (autoApproveAll || sessionYolo.has(id)) argv.push("--yolo")
-  const cwd = opts.cwd ? winPath(opts.cwd) : winPath(hermesHome())
-  const proc = Bun.spawn(argv, {
-    stdout: "pipe",
-    stderr: "pipe",
-    stdin: "ignore",
-    cwd: process.env.HERMES_CANVAS_PROMPT_CWD ?? cwd,
-    env: { ...process.env, ...launcher.env, PWD: process.env.HERMES_CANVAS_PROMPT_CWD ?? cwd },
-  })
-  const aid = `live_${id}_${Date.now().toString(36)}`
-  const handle: PromptHandle = { sessionID: id, proc, assistantID: aid, startedAt: Date.now() }
-  runningProcs.set(id, handle)
-  opts.emit({ id: uid("evt"), type: "session.execution.started", created: Date.now(), data: { sessionID: id } });
-  void pumpPromptStream(handle, opts.emit).finally(() => {
-    if (runningProcs.get(id) === handle) runningProcs.delete(id)
-  })
+  if (startingPromises.has(id)) throw new Error("session is already running")
+  const prev = runningProcs.get(id)
+  if (prev) {
+    if (!prev.interrupted) throw new Error("session is already running")
+    await prev.exited.catch(() => {})
+    if (startingPromises.has(id) || (runningProcs.has(id) && !runningProcs.get(id)!.interrupted)) {
+      throw new Error("session is already running")
+    }
+  }
+
+  let resolveStart!: () => void
+  const startPromise = new Promise<void>((r) => { resolveStart = r })
+  startingPromises.set(id, startPromise)
+  abortedStarts.delete(id)
+
+  try {
+    const launcher = await resolveChatLauncher()
+    if (abortedStarts.delete(id)) return
+
+    const argv = [...launcher.argv, "chat", "--resume", id, "-q", text, "--format", "stream-json"]
+    if (opts.model) argv.push("-m", opts.model)
+    if (autoApproveAll || sessionYolo.has(id)) argv.push("--yolo")
+
+    const desiredCwd = process.env.HERMES_CANVAS_PROMPT_CWD ?? (opts.cwd ? winPath(opts.cwd) : winPath(hermesHome()))
+    const homeFallback = winPath(hermesHome())
+    const cwd = existsSync(desiredCwd) ? desiredCwd : existsSync(homeFallback) ? homeFallback : homedir()
+
+    const proc = Bun.spawn(argv, {
+      stdout: "pipe",
+      stderr: "pipe",
+      stdin: "ignore",
+      cwd,
+      env: { ...process.env, ...launcher.env, PWD: cwd },
+    })
+
+    const aid = `live_${id}_${Date.now().toString(36)}`
+    let settleExit!: () => void
+    const exited = new Promise<void>((r) => { settleExit = r })
+    const handle: PromptHandle = { sessionID: id, proc, assistantID: aid, startedAt: Date.now(), exited }
+    runningProcs.set(id, handle)
+    try {
+      opts.emit({ id: uid("evt"), type: "session.execution.started", created: Date.now(), data: { sessionID: id } })
+    } catch (err) {
+      runningProcs.delete(id)
+      try { proc.kill() } catch { /* ignore */ }
+      await proc.exited.catch(() => {})
+      settleExit()
+      throw err
+    }
+
+    void pumpPromptStream(handle, opts.emit).finally(() => {
+      recordManagedWatermark(id)
+      if (runningProcs.get(id) === handle) runningProcs.delete(id)
+      settleExit()
+      opts.onSettled?.(handle.interrupted ? "interrupted" : "ended")
+    })
+  } finally {
+    if (startingPromises.get(id) === startPromise) startingPromises.delete(id)
+    resolveStart()
+  }
 }
 
 async function pumpPromptStream(handle: PromptHandle, emit: (ev: CanvasEvent) => void): Promise<void> {
   const { sessionID: id, proc, assistantID: aid } = handle
   const now = () => Date.now()
-  let sawText = false
+  let inText = false
+  let textOrdinal = 0
   let toolSeq = 0
-  const toolIDs = new Map<string, string>()
+  const toolIDs = new Map<string, string[]>()
+
+  const drainStderr = (async () => {
+    if (!(proc.stderr instanceof ReadableStream)) return ""
+    const r = (proc.stderr as ReadableStream<Uint8Array>).getReader()
+    const dec = new TextDecoder()
+    let tail = ""
+    try {
+      for (;;) {
+        const { done, value } = await r.read()
+        if (done) break
+        tail += dec.decode(value, { stream: true })
+        if (tail.length > 8192) tail = tail.slice(-8192)
+      }
+      tail += dec.decode()
+    } catch { /* ignore */ }
+    return tail
+  })()
+
+  const closeText = () => {
+    if (!inText) return
+    inText = false
+    emit({ id: uid("evt"), type: "session.text.ended", created: now(), data: { sessionID: id, assistantMessageID: aid, ordinal: textOrdinal } })
+    textOrdinal++
+  }
+
   const finish = (ok: boolean) => {
-    if (sawText) emit({ id: uid("evt"), type: "session.text.ended", created: now(), data: { sessionID: id, assistantMessageID: aid } })
+    if (handle.interrupted) return
+    closeText()
     emit({ id: uid("evt"), type: "session.step.ended", created: now(), data: { sessionID: id, assistantMessageID: aid } })
     emit({
       id: uid("evt"),
@@ -763,74 +1013,98 @@ async function pumpPromptStream(handle: PromptHandle, emit: (ev: CanvasEvent) =>
       data: { sessionID: id },
     })
   }
+
+  const handleLine = (line: string): "result" | void => {
+    if (!line || handle.interrupted) return
+    let msg: any
+    try {
+      msg = JSON.parse(line)
+    } catch {
+      return
+    }
+    if (msg.type === "text" && typeof msg.text === "string" && msg.text) {
+      if (!inText) {
+        inText = true
+        emit({ id: uid("evt"), type: "session.text.started", created: now(), data: { sessionID: id, assistantMessageID: aid, ordinal: textOrdinal } })
+      }
+      emit({ id: uid("evt"), type: "session.text.delta", created: now(), data: { sessionID: id, assistantMessageID: aid, ordinal: textOrdinal, delta: msg.text } })
+    } else if (msg.type === "tool_use") {
+      closeText()
+      const tid = String(msg.tool_call_id ?? `live_${toolSeq++}`)
+      const key = String(msg.tool_call_id ?? msg.name ?? "")
+      const q = toolIDs.get(key)
+      if (q) q.push(tid)
+      else toolIDs.set(key, [tid])
+      emit({ id: uid("evt"), type: "session.tool.input.started", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, name: String(msg.name ?? "tool") } })
+      emit({ id: uid("evt"), type: "session.tool.called", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, input: msg.input, executed: true } })
+    } else if (msg.type === "tool_result") {
+      const key = String(msg.tool_call_id ?? msg.name ?? "")
+      const tid = toolIDs.get(key)?.shift() ?? String(msg.tool_call_id ?? `live_${toolSeq++}`)
+      const out = String(msg.output ?? "")
+      if (msg.is_error) {
+        emit({ id: uid("evt"), type: "session.tool.failed", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, error: out.slice(0, 2000) } })
+      } else {
+        emit({ id: uid("evt"), type: "session.tool.success", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, content: [{ type: "text", text: capText(out) }], executed: true } })
+      }
+    } else if (msg.type === "result") {
+      finish((msg.exit_code ?? 0) === 0 && !msg.error)
+      return "result"
+    }
+  }
+
   try {
     const reader = (proc.stdout as ReadableStream<Uint8Array>).getReader()
     const dec = new TextDecoder()
     let buf = ""
     for (;;) {
       const { done, value } = await reader.read()
-      if (done) break
+      if (done) {
+        buf += dec.decode()
+        const tail = buf.trim()
+        if (tail && handleLine(tail) === "result") {
+          await proc.exited
+          await drainStderr
+          return
+        }
+        break
+      }
       buf += dec.decode(value, { stream: true })
       let nl: number
       while ((nl = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, nl).trim()
         buf = buf.slice(nl + 1)
-        if (!line) continue
-        let msg: any
-        try {
-          msg = JSON.parse(line)
-        } catch {
-          continue
-        }
-        if (msg.type === "text" && typeof msg.text === "string" && msg.text) {
-          if (!sawText) {
-            sawText = true
-            emit({ id: uid("evt"), type: "session.text.started", created: now(), data: { sessionID: id, assistantMessageID: aid, ordinal: 0 } })
-          }
-          emit({ id: uid("evt"), type: "session.text.delta", created: now(), data: { sessionID: id, assistantMessageID: aid, ordinal: 0, delta: msg.text } })
-        } else if (msg.type === "tool_use") {
-          const tid = String(msg.tool_call_id ?? `live_${toolSeq++}`)
-          toolIDs.set(String(msg.tool_call_id ?? msg.name), tid)
-          emit({ id: uid("evt"), type: "session.tool.input.started", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, name: String(msg.name ?? "tool") } })
-          emit({ id: uid("evt"), type: "session.tool.called", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, input: msg.input, executed: true } })
-        } else if (msg.type === "tool_result") {
-          const tid = toolIDs.get(String(msg.tool_call_id ?? msg.name)) ?? String(msg.tool_call_id ?? `live_${toolSeq++}`)
-          const out = String(msg.output ?? "")
-          if (msg.is_error) {
-            emit({ id: uid("evt"), type: "session.tool.failed", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, error: out.slice(0, 2000) } })
-          } else {
-            emit({ id: uid("evt"), type: "session.tool.success", created: now(), data: { sessionID: id, assistantMessageID: aid, id: tid, content: [{ type: "text", text: capText(out) }], executed: true } })
-          }
-        } else if (msg.type === "result") {
-          finish((msg.exit_code ?? 0) === 0 && !msg.error)
-          // Drain stderr, wait for exit, stop reading stdout.
+        if (handleLine(line) === "result") {
           try { reader.cancel() } catch { /* ignore */ }
           await proc.exited
-          try {
-            if (proc.stderr instanceof ReadableStream) await new Response(proc.stderr).text()
-          } catch { /* ignore */ }
+          await drainStderr
           return
         }
       }
     }
-    await proc.exited;
+    await proc.exited
+    await drainStderr
     finish((proc.exitCode ?? 1) === 0)
   } catch {
     try { proc.kill() } catch { /* ignore */ }
     await proc.exited.catch(() => {})
+    await drainStderr.catch(() => "")
     finish(false)
   }
 }
 
 export function interruptSession(id: string): boolean {
+  if (startingPromises.has(id) && !runningProcs.has(id)) {
+    abortedStarts.add(id)
+    return true
+  }
   const h = runningProcs.get(id)
-  if (!h) return false
+  if (!h || h.interrupted) return false
+  h.interrupted = true
   try {
     h.proc.kill()
   } catch {
     return false
   }
-  runningProcs.delete(id)
   return true
 }
 
@@ -840,14 +1114,16 @@ export function interruptSession(id: string): boolean {
 
 export function startWatcher(emit: (ev: CanvasEvent) => void, intervalMs = 1000): () => void {
   let maxMsg = 0
+  let primed = false
   let sessions = new Map<string, string>()
   let stopped = false
   let timer: ReturnType<typeof setInterval> | undefined
   const pendingExternal = new Map<string, ReturnType<typeof setTimeout>>()
 
   const snapshot = () => {
-    const db = openDb(true)
+    let db: Database | undefined
     try {
+      db = openDb(true)
       try {
         const row = db.query("SELECT MAX(id) m FROM messages").get() as { m: number | null } | null
         if (row && typeof row.m === "number") {
@@ -855,53 +1131,156 @@ export function startWatcher(emit: (ev: CanvasEvent) => void, intervalMs = 1000)
         }
       } catch { /* ignore */ }
       const next = new Map<string, string>()
+      const byId = new Map<string, SessionRow>()
       try {
-        const rows = db.query("SELECT id, title, model, ended_at, end_reason FROM sessions").all() as Array<{
-          id: string; title: string | null; model: string | null; ended_at: number | null; end_reason: string | null
-        }>
-        for (const r of rows) next.set(r.id, JSON.stringify([r.title, r.model, r.ended_at, r.end_reason]))
+        const rows = db.query(
+          `SELECT ${SESSION_COLS} FROM sessions WHERE COALESCE(archived,0)=0 AND COALESCE(hidden,0)=0`,
+        ).all() as SessionRow[]
+        for (const r of rows) {
+          next.set(r.id, JSON.stringify([r.title, r.model, r.billing_provider, r.ended_at, r.end_reason]))
+          byId.set(r.id, r)
+        }
       } catch { /* ignore */ }
-      if (sessions.size === 0) {
+      if (!primed) {
         sessions = next
+        primed = true
         return
       }
-      // New sessions.
+
+      const nowMs = Date.now()
+      for (const [k, exp] of locallyCreated) if (exp < nowMs) locallyCreated.delete(k)
+
+      const viewed = next.size > 0 ? loadViewed() : new Map<string, number>()
+      const runningIds = runningSessionIDs()
+      let lastMsgs: Map<string, number> | undefined
+
       for (const [id, fp] of next) {
-        if (!sessions.has(id)) {
-          const full = getSession(id, loadViewed(), runningSessionIDs())
-          void fp
+        const prevFp = sessions.get(id)
+        const r = byId.get(id)!
+        if (prevFp === undefined) {
+          const sup = locallyCreated.get(id)
+          if (sup !== undefined && sup >= nowMs) {
+            locallyCreated.delete(id)
+            continue
+          }
+          if (!lastMsgs) lastMsgs = lastMsgMap(db)
+          const full = mapSession(r, {
+            lastMsgAt: lastMsgs.get(id),
+            running: runningIds.has(id),
+            viewed: viewed.get(id),
+          })
           emit({
             id: uid("evt"),
             type: "session.created",
             created: Date.now(),
-            data: full
-              ? { sessionID: id, parentID: full.parentID, projectID: full.projectID, agent: full.agent, model: full.model, title: full.title, location: full.location }
-              : { sessionID: id },
+            data: {
+              sessionID: id,
+              parentID: full.parentID,
+              projectID: full.projectID,
+              agent: full.agent,
+              model: full.model,
+              title: full.title,
+              location: full.location,
+            },
+          })
+          continue
+        }
+        if (prevFp !== fp) {
+          const [prevTitle, prevModel, prevProvider, prevEndedAt, prevEndReason] = JSON.parse(prevFp) as [
+            string | null,
+            string | null,
+            string | null,
+            number | null,
+            string | null,
+          ]
+          if (r.title !== prevTitle && r.title != null) {
+            emit({
+              id: uid("evt"),
+              type: "session.renamed",
+              created: Date.now(),
+              data: { sessionID: id, title: r.title },
+            })
+          }
+          if (r.model !== prevModel || r.billing_provider !== prevProvider) {
+            emit({
+              id: uid("evt"),
+              type: "session.model.selected",
+              created: Date.now(),
+              data: { sessionID: id, model: parseModel(r.model, r.billing_provider) },
+            })
+          }
+          const wasEnded = prevEndedAt != null || prevEndReason != null
+          const nowEnded = r.ended_at != null || r.end_reason != null
+          if (!wasEnded && nowEnded && !runningProcs.has(id)) {
+            if (pendingExternal.has(id)) {
+              clearTimeout(pendingExternal.get(id)!)
+              pendingExternal.delete(id)
+            }
+            const outcome = mapOutcome(r.end_reason)
+            const type =
+              outcome === "failed"
+                ? "session.execution.failed"
+                : outcome === "interrupted"
+                  ? "session.execution.interrupted"
+                  : "session.execution.succeeded"
+            emit({
+              id: uid("evt"),
+              type,
+              created: ms(r.ended_at) ?? Date.now(),
+              data: { sessionID: id },
+            })
+          }
+        }
+      }
+
+      for (const id of sessions.keys()) {
+        if (!next.has(id)) {
+          if (pendingExternal.has(id)) {
+            clearTimeout(pendingExternal.get(id)!)
+            pendingExternal.delete(id)
+          }
+          emit({
+            id: uid("evt"),
+            type: "session.deleted",
+            created: Date.now(),
+            data: { sessionID: id },
           })
         }
       }
+
       sessions = next
+    } catch {
+      /* DB may not exist yet or be temporarily unreadable */
     } finally {
-      db.close()
+      db?.close()
     }
   }
 
   const poll = () => {
     if (stopped) return
-    let fresh: Array<{ session_id: string }> = []
-    const db = openDb(true)
+    const freshSessions = new Set<string>()
+    let db: Database | undefined
     try {
-      try {
-        fresh = db.query("SELECT DISTINCT session_id FROM messages WHERE id > ?").all(maxMsg) as typeof fresh
-        const row = db.query("SELECT MAX(id) m FROM messages").get() as { m: number | null } | null
-        if (row && typeof row.m === "number") maxMsg = Math.max(maxMsg, row.m)
-      } catch { /* ignore */ }
+      db = openDb(true)
+      const rows = db.query("SELECT id, session_id FROM messages WHERE id > ? ORDER BY id ASC").all(maxMsg) as Array<{
+        id: number
+        session_id: string
+      }>
+      for (const r of rows) {
+        maxMsg = Math.max(maxMsg, r.id)
+        if (runningProcs.has(r.session_id)) {
+          managedWatermarks.set(r.session_id, Math.max(managedWatermarks.get(r.session_id) ?? 0, r.id))
+          continue
+        }
+        if (r.id <= (managedWatermarks.get(r.session_id) ?? 0)) continue
+        freshSessions.add(r.session_id)
+      }
+    } catch {
+      /* ignore transient DB errors */
     } finally {
-      db.close()
+      db?.close()
     }
-    for (const r of fresh) {
-      const id = r.session_id
-      if (runningProcs.has(id)) continue // streaming path owns this session
+    for (const id of freshSessions) {
       if (!pendingExternal.has(id)) {
         emit({ id: uid("evt"), type: "session.execution.started", created: Date.now(), data: { sessionID: id } })
       } else {
@@ -919,9 +1298,7 @@ export function startWatcher(emit: (ev: CanvasEvent) => void, intervalMs = 1000)
   }
 
   // Prime synchronously so the first poll only sees fresh changes.
-  try {
-    snapshot()
-  } catch { /* DB may not exist yet in tests */ }
+  snapshot()
   timer = setInterval(poll, intervalMs)
   return () => {
     stopped = true

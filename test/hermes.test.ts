@@ -1,7 +1,29 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, jest, test } from "bun:test"
+import { Database } from "bun:sqlite"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir, homedir } from "node:os"
 import { join } from "node:path"
-import { homedir } from "node:os"
-import { createSessionRow, hermesHome, mapMessages, mapSession, parseModel, prettyToolText, projectIDFor, projectNameFor, sessionDir } from "../src/server/hermes"
+import {
+  type CanvasEvent,
+  createSessionRow,
+  defaultModel,
+  hermesBin,
+  hermesHome,
+  listFolders,
+  listModels,
+  mapMessages,
+  mapOutcome,
+  mapSession,
+  parseModel,
+  prettyToolText,
+  projectIDFor,
+  projectNameFor,
+  searchSessions,
+  sessionDir,
+  sessionMessages,
+  setSessionYolo,
+  startWatcher,
+} from "../src/server/hermes"
 import { makeHermesHome } from "./helpers"
 
 describe("hermes row mapping", () => {
@@ -213,5 +235,238 @@ describe("createSessionRow", () => {
     // "New session") so the partial index ignores them.
     expect(a.title).toBeUndefined()
     expect(b.title).toBeUndefined()
+
+    const yolo = createSessionRow("/repo/y", "custom/m", "Yolo", true)
+    expect(yolo.title).toBe("Yolo")
+    expect(yolo.permissions).toEqual([{ action: "*", resource: "*", effect: "allow" }])
+  })
+})
+
+describe("store edge fixes (outcomes, FTS, folders, config, watcher)", () => {
+  test("mapOutcome classifies failure, interrupt, and success end_reasons", () => {
+    expect(mapOutcome("cli_close")).toBe("succeeded")
+    expect(mapOutcome("error")).toBe("failed")
+    expect(mapOutcome("crash_timeout")).toBe("failed")
+    expect(mapOutcome("interrupted")).toBe("interrupted")
+    expect(mapOutcome("cancelled_by_user")).toBe("interrupted")
+    expect(mapOutcome("sigint")).toBe("interrupted")
+    const s = mapSession({
+      id: "y1", source: "cli", model: null, billing_provider: null, parent_session_id: null,
+      started_at: 100, ended_at: 200, end_reason: "error", message_count: 0,
+      input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
+      cwd: "/r", git_repo_root: null, estimated_cost_usd: null, actual_cost_usd: null, title: null, archived: 1, hidden: 0,
+    }, { yolo: true })
+    expect(s.outcome).toBe("failed")
+    expect(s.time.archived).toBe(200_000)
+    expect(s.permissions).toEqual([{ action: "*", resource: "*", effect: "allow" }])
+    setSessionYolo("y_live", true)
+    expect(mapSession({
+      id: "y_live", source: "cli", model: null, billing_provider: null, parent_session_id: null,
+      started_at: 100, ended_at: null, end_reason: null, message_count: 0,
+      input_tokens: 0, output_tokens: 0, reasoning_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0,
+      cwd: "/r", git_repo_root: null, estimated_cost_usd: null, actual_cost_usd: null, title: null, archived: 0, hidden: 0,
+    }).permissions).toEqual([{ action: "*", resource: "*", effect: "allow" }])
+    setSessionYolo("y_live", false)
+  })
+
+  test("mapMessages uses deterministic timestamp when timestamp is null", () => {
+    const msgs = mapMessages(
+      [
+        { id: 2, role: "assistant", content: "hi", tool_call_id: null, tool_calls: null, tool_name: null, timestamp: null, finish_reason: null, reasoning: null },
+        { id: 1, role: "user", content: "hey", tool_call_id: null, tool_calls: null, tool_name: null, timestamp: 12, finish_reason: null, reasoning: null },
+      ],
+      "cli",
+      { id: "m", providerID: "p" },
+    )
+    expect(msgs[0].time.created).toBe(12_000)
+    expect(msgs[1].time.created).toBe(12_000)
+
+    const noTs = mapMessages(
+      [{ id: 1, role: "user", content: "x", tool_call_id: null, tool_calls: null, tool_name: null, timestamp: null, finish_reason: null, reasoning: null }],
+      "cli",
+      { id: "m", providerID: "p" },
+    )
+    expect(noTs[0].time.created).toBe(0)
+  })
+
+  test("sessionMessages rejects non-numeric cursor", () => {
+    makeHermesHome()
+    expect(() => sessionMessages("ses_new_1", 10, "not-a-number")).toThrow(RangeError)
+    expect(() => sessionMessages("ses_new_1", 10, "-5")).toThrow(RangeError)
+  })
+
+  test("searchSessions supports FTS5 messages_fts and falls back safely on LIKE wildcards", () => {
+    const savedDb = process.env.HERMES_CANVAS_DB
+    const tmp = mkdtempSync(join(tmpdir(), "hermes-fts-"))
+    const dbFile = join(tmp, "state.db")
+    const db = new Database(dbFile, { create: true })
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY, source TEXT, model TEXT, billing_provider TEXT,
+        parent_session_id TEXT, started_at REAL, ended_at REAL, end_reason TEXT,
+        message_count INTEGER, input_tokens INTEGER, output_tokens INTEGER,
+        reasoning_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER,
+        cwd TEXT, git_repo_root TEXT, estimated_cost_usd REAL, actual_cost_usd REAL,
+        title TEXT, archived INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0,
+        tool_call_count INTEGER DEFAULT 0, created_source TEXT
+      );
+      CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT,
+        tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL,
+        finish_reason TEXT, reasoning TEXT
+      );
+      CREATE VIRTUAL TABLE messages_fts USING fts5(session_id UNINDEXED, content);
+    `)
+    db.prepare("INSERT INTO sessions (id, source, started_at, title) VALUES (?, 'cli', ?, ?)").run("ses_fts", 200, "Ordinary Title")
+    db.prepare("INSERT INTO sessions (id, source, started_at, title) VALUES (?, 'cli', ?, ?)").run("ses_pct", 100, "100% real_match")
+    db.prepare("INSERT INTO sessions (id, source, started_at, title) VALUES (?, 'cli', ?, ?)").run("ses_wild", 90, "1000x realxmatch")
+    db.prepare("INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, 'assistant', ?, ?)").run("ses_fts", "xylophone telemetry", 200)
+    db.prepare("INSERT INTO messages_fts (session_id, content) VALUES (?, ?)").run("ses_fts", "xylophone telemetry")
+    db.close()
+
+    process.env.HERMES_CANVAS_DB = dbFile
+    try {
+      const viewed = new Map([["ses_fts", 999]])
+      const running = new Set(["ses_fts"])
+      const ftsHits = searchSessions("xylophone", 50, viewed, running)
+      expect(ftsHits.map((s) => s.id)).toEqual(["ses_fts"])
+      expect(ftsHits[0].time.viewed).toBe(999)
+      expect(ftsHits[0].time.idle).toBeUndefined()
+
+      // Invalid FTS5 syntax ("100% real_") falls back to LIKE and must NOT match wildcards against ses_wild.
+      const likeHits = searchSessions("100% real_", 50)
+      expect(likeHits.map((s) => s.id)).toEqual(["ses_pct"])
+    } finally {
+      if (savedDb === undefined) delete process.env.HERMES_CANVAS_DB
+      else process.env.HERMES_CANVAS_DB = savedDb
+      try { rmSync(tmp, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  test("listFolders filters non-dirs, sorts entries, and validates paths", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "hermes-folders-"))
+    try {
+      mkdirSync(join(tmp, "zeta"))
+      mkdirSync(join(tmp, "alpha"))
+      writeFileSync(join(tmp, "file.txt"), "hi")
+      expect(listFolders(tmp)).toEqual([join(tmp, "alpha"), join(tmp, "zeta")])
+      expect(() => listFolders("")).toThrow("missing path")
+      expect(() => listFolders(join(tmp, "file.txt"))).toThrow("not a directory")
+      if (process.platform === "win32") {
+        expect(Array.isArray(listFolders("C:"))).toBe(true)
+      }
+    } finally {
+      try { rmSync(tmp, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  test("config.yaml handles CRLF, quotes, inline comments, and model scoping", () => {
+    const savedHome = process.env.HERMES_HOME
+    const tmp = mkdtempSync(join(tmpdir(), "hermes-yaml-"))
+    try {
+      process.env.HERMES_HOME = tmp
+      writeFileSync(
+        join(tmp, "config.yaml"),
+        [
+          "other_section:",
+          "  default: should/ignore # not inside model:",
+          "model:",
+          '  default: "google/gemma-4-12b" # primary default',
+          "custom_providers:",
+          "  - name: 'myprov' # inline comment",
+          "    models:",
+          "      # disabled: {}",
+          "      fast-1: {} # comment",
+          '      "quoted-2": {}',
+          "trailing: true",
+          "",
+        ].join("\r\n"),
+      )
+      expect(defaultModel()).toEqual({ id: "gemma-4-12b", providerID: "google", name: "google/gemma-4-12b" })
+      const models = listModels()
+      expect(models).toContainEqual({ id: "fast-1", providerID: "myprov", name: "myprov/fast-1" })
+      expect(models).toContainEqual({ id: "quoted-2", providerID: "myprov", name: "myprov/quoted-2" })
+      expect(models.some((m) => m.id.includes("disabled"))).toBe(false)
+    } finally {
+      if (savedHome === undefined) delete process.env.HERMES_HOME
+      else process.env.HERMES_HOME = savedHome
+      try { rmSync(tmp, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  test("hermesBin falls back when HERMES_BIN is whitespace", () => {
+    const saved = process.env.HERMES_BIN
+    try {
+      process.env.HERMES_BIN = "   "
+      expect(hermesBin()).toBe("hermes")
+    } finally {
+      if (saved === undefined) delete process.env.HERMES_BIN
+      else process.env.HERMES_BIN = saved
+    }
+  })
+
+  test("startWatcher primes empty DBs, diffs renames/models/outcomes/deletes, and deduplicates local creates", () => {
+    const savedDb = process.env.HERMES_CANVAS_DB
+    const tmp = mkdtempSync(join(tmpdir(), "hermes-watch-"))
+    const dbFile = join(tmp, "state.db")
+    const db = new Database(dbFile, { create: true })
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY, source TEXT, model TEXT, billing_provider TEXT,
+        parent_session_id TEXT, started_at REAL, ended_at REAL, end_reason TEXT,
+        message_count INTEGER, input_tokens INTEGER, output_tokens INTEGER,
+        reasoning_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER,
+        cwd TEXT, git_repo_root TEXT, estimated_cost_usd REAL, actual_cost_usd REAL,
+        title TEXT, archived INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0,
+        tool_call_count INTEGER DEFAULT 0, created_source TEXT
+      );
+      CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT,
+        tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL,
+        finish_reason TEXT, reasoning TEXT
+      );
+    `)
+    process.env.HERMES_CANVAS_DB = dbFile
+
+    jest.useFakeTimers()
+    const events: CanvasEvent[] = []
+    const stopW = startWatcher((ev) => events.push(ev), 1000)
+    try {
+      // Starting on an empty DB must still detect the first external session created afterwards.
+      db.prepare("INSERT INTO sessions (id, source, started_at, cwd, title, model) VALUES (?, 'cli', ?, '/repo/e', 'First', 'custom/m1')").run("ses_e1", 100)
+      jest.advanceTimersByTime(1000)
+      expect(events.map((e) => e.type)).toEqual(["session.created"])
+
+      // Local createSessionRow suppresses duplicate session.created from the watcher.
+      events.length = 0
+      const local = createSessionRow("/repo/local")
+      jest.advanceTimersByTime(1000)
+      expect(events).toHaveLength(0)
+
+      // External rename + model change + failed ending emit granular events.
+      events.length = 0
+      db.prepare("UPDATE sessions SET title = ?, model = ?, ended_at = ?, end_reason = ? WHERE id = ?").run(
+        "Renamed", "google/gemma-4-12b", 200, "error", "ses_e1",
+      )
+      jest.advanceTimersByTime(1000)
+      expect(events.map((e) => e.type)).toEqual([
+        "session.renamed",
+        "session.model.selected",
+        "session.execution.failed",
+      ])
+
+      // Archiving emits session.deleted.
+      events.length = 0
+      db.prepare("UPDATE sessions SET archived = 1 WHERE id = ?").run(local.id)
+      jest.advanceTimersByTime(1000)
+      expect(events.map((e) => e.type)).toEqual(["session.deleted"])
+    } finally {
+      stopW()
+      jest.useRealTimers()
+      db.close()
+      if (savedDb === undefined) delete process.env.HERMES_CANVAS_DB
+      else process.env.HERMES_CANVAS_DB = savedDb
+      try { rmSync(tmp, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
   })
 })

@@ -73,6 +73,9 @@ describe("against the real server", () => {
 
     await backend.listSessions(9999)
     expect(last().url).toBe("/api/hermes/session?limit=600") // client-side clamp
+
+    await backend.listSessions(-5)
+    expect(last().url).toBe("/api/hermes/session?limit=600")
   })
 
   test("getSession maps a session; unknown id throws ApiError 404 with the server message", async () => {
@@ -128,11 +131,23 @@ describe("against the real server", () => {
     expect(last().url).toBe("/api/hermes/model/default")
   })
 
-  test("folders: fs/list maps directory entries to slash-free paths", async () => {
+  test("folders: fs/list maps directory entries to basenames", async () => {
     mkdirSync(join(home, "projects"), { recursive: true })
     const dirs = await backend.listFolders(home)
-    expect(dirs).toEqual([join(home, "projects")]) // files filtered, join() has no trailing slash
+    expect(dirs).toEqual(["projects"]) // basenames only, matching DemoBackend/picker contract
     expect(last().url).toBe(`/api/hermes/fs/list?path=${encodeURIComponent(home)}`)
+  })
+
+  test("setAutoApproveAll toggles server global yolo state", async () => {
+    const yolo = async () => (await realFetch(`${base}/api/hermes/yolo?session=any_session`)).json()
+    try {
+      await backend.setAutoApproveAll(true)
+      expect(last()).toMatchObject({ url: "/api/hermes/approve", method: "POST", body: { all: true } })
+      expect((await yolo()).yolo).toBe(true)
+    } finally {
+      await backend.setAutoApproveAll(false)
+    }
+    expect((await yolo()).yolo).toBe(false)
   })
 
   test("mutations are observable on the server: rename, switchModel, yolo permissions", async () => {
@@ -291,14 +306,34 @@ describe("mapping and error paths (stub fetch)", () => {
     stub.restore()
   })
 
-  test("folders keep directories only, strip trailing slashes, tolerate missing data", async () => {
-    let stub = withStub(() => ({ json: { data: [{ path: "/a/b/", type: "directory" }, { path: "/a/c", type: "file" }] } }))
-    expect(await backend.listFolders("/a")).toEqual(["/a/b"])
+  test("folders keep directories only, extract basenames on slash/backslash, tolerate missing data", async () => {
+    let stub = withStub(() => ({
+      json: {
+        data: [
+          { path: "/a/b/", type: "directory" },
+          { path: "C:\\a\\win\\", type: "directory" },
+          { name: "named/", type: "directory" },
+          { path: "/a/c", type: "file" },
+        ],
+      },
+    }))
+    expect(await backend.listFolders("/a")).toEqual(["b", "win", "named"])
     stub.restore()
 
     stub = withStub(() => ({ json: {} }))
     expect(await backend.listFolders("/a")).toEqual([])
     stub.restore()
+  })
+
+  test("ApiError sets name to ApiError", async () => {
+    const stub = withStub(() => ({ status: 400, json: { message: "bad input" } }))
+    const err = await backend.listProjects().then(
+      () => undefined,
+      (e: unknown) => e,
+    )
+    stub.restore()
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).name).toBe("ApiError")
   })
 
   test("request bodies: optional fields included only when present", async () => {
@@ -470,6 +505,14 @@ describe("subscribe (fake EventSource)", () => {
       esLog[1].onerror!() // schedules at 500 again - NOT at 1000
       jest.advanceTimersByTime(500)
       expect(esLog).toHaveLength(3) // would still be 2 if the open never reset retry
+
+      // server.connected resets backoff even without onopen, and repeated
+      // onerror on the same source does not duplicate timers.
+      esLog[2].onmessage!({ data: JSON.stringify({ type: "server.connected" }) })
+      esLog[2].onerror!() // schedules 500, retry -> 1000
+      esLog[2].onerror!() // same source firing again shouldn't create a parallel stream
+      jest.advanceTimersByTime(500)
+      expect(esLog).toHaveLength(4)
       unsub()
     } finally {
       jest.useRealTimers()

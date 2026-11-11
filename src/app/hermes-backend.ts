@@ -4,8 +4,6 @@
 // corresponding replies are accepted no-ops.
 
 import type {
-  Delivery,
-  FileAttachment,
   FormInfo,
   InboxItem,
   Message,
@@ -13,7 +11,6 @@ import type {
   PermissionRule,
   OcEvent,
   Page,
-  PermissionDecision,
   PermissionRequest,
   Project,
   Session,
@@ -51,7 +48,8 @@ export class HermesBackend implements Backend {
   }
 
   async listSessions(max: number): Promise<Session[]> {
-    const page = await request<Page<Session>>("GET", `/api/hermes/session?limit=${Math.min(max, 600)}`)
+    const n = Number.isFinite(max) && max > 0 ? Math.min(Math.floor(max), 600) : 600
+    const page = await request<Page<Session>>("GET", `/api/hermes/session?limit=${n}`)
     return page.data ?? []
   }
 
@@ -104,8 +102,23 @@ export class HermesBackend implements Backend {
   }
 
   async listFolders(path: string): Promise<string[]> {
-    const r = await request<{ data: Array<{ path: string; type: string }> }>("GET", `/api/hermes/fs/list?path=${enc(path)}`)
-    return (r.data ?? []).filter((e) => e.type === "directory").map((e) => e.path.replace(/\/+$/, ""))
+    const r = await request<{ data: Array<{ path?: string; name?: string; type: string }> }>(
+      "GET",
+      `/api/hermes/fs/list?path=${enc(path)}`,
+    )
+    return (r.data ?? [])
+      .filter((e) => e.type === "directory")
+      .map((e) => {
+        if (e.name) return e.name.replace(/[\\/]+$/, "")
+        const p = String(e.path ?? "").replace(/[\\/]+$/, "")
+        const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"))
+        return idx >= 0 ? p.slice(idx + 1) : p
+      })
+      .filter(Boolean)
+  }
+
+  async setAutoApproveAll(on: boolean): Promise<void> {
+    await request("POST", "/api/hermes/approve", { all: on })
   }
 
   async switchModel(id: string, model: ModelRef): Promise<void> {
@@ -148,24 +161,33 @@ export class HermesBackend implements Backend {
 
     const connect = () => {
       if (closed) return
-      es = new EventSource("/api/hermes/event")
-      es.onopen = () => {
+      timer = undefined
+      const source = new EventSource("/api/hermes/event")
+      es = source
+      source.onopen = () => {
+        if (closed || es !== source) return
         retry = 500
       }
-      es.onmessage = (m) => {
+      source.onmessage = (m) => {
+        if (closed || es !== source) return
         let ev: OcEvent
         try {
           ev = JSON.parse(m.data)
         } catch {
           return
         }
-        if (ev.type === "server.connected") onState("live")
+        if (ev.type === "server.connected") {
+          retry = 500
+          onState("live")
+        }
         onEvent(ev)
       }
-      es.onerror = () => {
-        es?.close()
-        if (closed) return
+      source.onerror = () => {
+        source.close()
+        if (closed || es !== source) return
+        es = undefined
         onState("reconnecting")
+        if (timer) clearTimeout(timer)
         timer = setTimeout(connect, retry)
         retry = Math.min(retry * 2, 10_000)
       }
@@ -174,8 +196,12 @@ export class HermesBackend implements Backend {
     connect()
     return () => {
       closed = true
-      if (timer) clearTimeout(timer)
+      if (timer) {
+        clearTimeout(timer)
+        timer = undefined
+      }
       es?.close()
+      es = undefined
     }
   }
 }

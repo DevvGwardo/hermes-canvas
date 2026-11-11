@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { makeHermesHome } from "./helpers"
-import { type CanvasEvent, interruptSession, runningSessionIDs, startPrompt } from "../src/server/hermes"
+import { type CanvasEvent, interruptSession, runningSessionIDs, startPrompt, waitForPromptExit } from "../src/server/hermes"
 
 // Prompt-stream lane (hermes.ts pumpPromptStream). server.test.ts covers the
 // happy path over HTTP (fast mode) and hang+interrupt; this file drives
@@ -104,5 +107,146 @@ describe("startPrompt stream branches", () => {
     expect(types).not.toContain("session.text.delta") // died before any delta
     expect(runningSessionIDs().has("ses_new_1")).toBe(false) // running cleared
     process.env.HERMES_FAKE_MODE = "fast"
+  })
+
+  test("throwing on 1st emit kills proc and cleans runningSessionIDs", async () => {
+    process.env.HERMES_FAKE_MODE = "hang"
+    try {
+      await expect(
+        startPrompt("ses_throw_1", "boom", {
+          emit: () => {
+            throw new Error("listener down")
+          },
+        }),
+      ).rejects.toThrow("listener down")
+      expect(runningSessionIDs().has("ses_throw_1")).toBe(false)
+    } finally {
+      process.env.HERMES_FAKE_MODE = "fast"
+    }
+  })
+
+  test("multi-step ordinals, FIFO nameless tool IDs, EOF without newline, and large stderr", async () => {
+    const savedBin = process.env.HERMES_BIN
+    const tmp = mkdtempSync(join(tmpdir(), "hermes-stream-edge-"))
+    const script = join(tmp, "edge-hermes.ts")
+    writeFileSync(
+      script,
+      [
+        'process.stderr.write("E".repeat(160_000));',
+        'const out = (o: unknown) => process.stdout.write(JSON.stringify(o) + "\\n");',
+        'out({ type: "text", text: "step0" });',
+        'out({ type: "tool_use", name: "terminal", input: { cmd: "a" } });',
+        'out({ type: "tool_use", name: "terminal", input: { cmd: "b" } });',
+        'out({ type: "tool_result", name: "terminal", output: "out-a", is_error: false });',
+        'out({ type: "tool_result", name: "terminal", output: "out-b", is_error: false });',
+        'out({ type: "text", text: "step1" });',
+        'process.stdout.write(JSON.stringify({ type: "text", text: "tail-eof" }));',
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+    )
+    process.env.HERMES_BIN = `bun ${script}`
+    try {
+      const events: CanvasEvent[] = []
+      await startPrompt("ses_edge_1", "hi", { emit: (ev) => events.push(ev) })
+      await waitForPromptExit("ses_edge_1")
+
+      const started = events.filter((e) => e.type === "session.text.started")
+      expect(started.map((e) => e.data.ordinal)).toEqual([0, 1])
+
+      const deltas = events.filter((e) => e.type === "session.text.delta").map((e) => e.data.delta)
+      expect(deltas).toEqual(["step0", "step1", "tail-eof"])
+
+      const calledIDs = events.filter((e) => e.type === "session.tool.called").map((e) => e.data.id)
+      const successIDs = events.filter((e) => e.type === "session.tool.success").map((e) => e.data.id)
+      expect(calledIDs).toEqual(["live_0", "live_1"])
+      expect(successIDs).toEqual(["live_0", "live_1"])
+      expect(events.map((e) => e.type)).toContain("session.execution.succeeded")
+    } finally {
+      if (savedBin === undefined) delete process.env.HERMES_BIN
+      else process.env.HERMES_BIN = savedBin
+      try { rmSync(tmp, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
+  })
+
+  test("missing cwd falls back cleanly without spawn ENOENT", async () => {
+    const savedPromptCwd = process.env.HERMES_CANVAS_PROMPT_CWD
+    delete process.env.HERMES_CANVAS_PROMPT_CWD
+    try {
+      const events: CanvasEvent[] = []
+      await startPrompt("ses_cwd_1", "hi", {
+        cwd: join(tmpdir(), "definitely-does-not-exist-hermes-cwd"),
+        emit: (ev) => events.push(ev),
+      })
+      await waitForPromptExit("ses_cwd_1")
+      expect(events.map((e) => e.type)).toContain("session.execution.succeeded")
+    } finally {
+      if (savedPromptCwd === undefined) delete process.env.HERMES_CANVAS_PROMPT_CWD
+      else process.env.HERMES_CANVAS_PROMPT_CWD = savedPromptCwd
+    }
+  })
+
+  test("interrupt prevents late execution.failed and double interrupt returns false", async () => {
+    process.env.HERMES_FAKE_MODE = "hang"
+    const events: CanvasEvent[] = []
+    try {
+      await startPrompt("ses_int_1", "long", { emit: (ev) => events.push(ev) })
+      expect(interruptSession("ses_int_1")).toBe(true)
+      expect(interruptSession("ses_int_1")).toBe(false)
+      expect(runningSessionIDs().has("ses_int_1")).toBe(false)
+      await waitForPromptExit("ses_int_1")
+      expect(events.map((e) => e.type)).not.toContain("session.execution.failed")
+      expect(events.map((e) => e.type)).not.toContain("session.execution.succeeded")
+    } finally {
+      process.env.HERMES_FAKE_MODE = "fast"
+    }
+  })
+
+  test("concurrent startPrompt during launcher probe rejects as already running", async () => {
+    const savedBin = process.env.HERMES_BIN
+    const savedSite = process.env.HERMES_SITE_PACKAGES
+    const savedPy = process.env.HERMES_PYTHON
+    const tmp = mkdtempSync(join(tmpdir(), "hermes-race-probe-"))
+    const slowBin = join(tmp, "slow-launcher.ts")
+    writeFileSync(
+      slowBin,
+      [
+        "await Bun.sleep(150);",
+        'if (process.argv.includes("-c")) { console.log("ok"); process.exit(0); }',
+        'console.log(JSON.stringify({ type: "result", exit_code: 0 }));',
+        "",
+      ].join("\n"),
+    )
+    // Bypass PATH shims by making a script wrapper on HERMES_BIN unset + bun script? Note spawn calls [py, ...], so wrap bun in a tiny executable!
+    const win32 = process.platform === "win32"
+    const pyShim = join(tmp, win32 ? "slowpy.cmd" : "slowpy")
+    writeFileSync(
+      pyShim,
+      win32
+        ? `@echo off\r\nbun "${slowBin}" %*\r\n`
+        : `#!/bin/sh\nexec bun "${slowBin}" "$@"\n`,
+    )
+    if (!win32) {
+      const { chmodSync } = await import("node:fs")
+      chmodSync(pyShim, 0o755)
+    }
+    delete process.env.HERMES_BIN
+    process.env.HERMES_SITE_PACKAGES = tmp
+    process.env.HERMES_PYTHON = pyShim
+    try {
+      const p1 = startPrompt("ses_race_1", "one", { emit: () => {} })
+      const p2 = startPrompt("ses_race_1", "two", { emit: () => {} })
+      await expect(p2).rejects.toThrow("already running")
+      await p1
+      await waitForPromptExit("ses_race_1")
+    } finally {
+      if (savedBin === undefined) delete process.env.HERMES_BIN
+      else process.env.HERMES_BIN = savedBin
+      if (savedSite === undefined) delete process.env.HERMES_SITE_PACKAGES
+      else process.env.HERMES_SITE_PACKAGES = savedSite
+      if (savedPy === undefined) delete process.env.HERMES_PYTHON
+      else process.env.HERMES_PYTHON = savedPy
+      try { rmSync(tmp, { recursive: true, force: true }) } catch { /* ignore */ }
+    }
   })
 })

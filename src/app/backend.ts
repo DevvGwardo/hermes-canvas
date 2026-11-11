@@ -49,8 +49,10 @@ export interface Backend {
   listModels(): Promise<ModelOption[]>
   /** The model the agent backend uses when a session doesn't pick one. */
   serverDefaultModel(): Promise<ModelOption | undefined>
-  /** Subfolders of an absolute path; rejects if it isn't a readable folder. */
+  /** Basenames of subfolders of an absolute path; rejects if it isn't a readable folder. */
   listFolders(path: string): Promise<string[]>
+  /** Sync global auto-approve (--yolo) state with the backend when supported. */
+  setAutoApproveAll?(on: boolean): Promise<void>
   switchModel(id: string, model: ModelRef): Promise<void>
   prompt(id: string, input: PromptInput): Promise<void>
   interrupt(id: string): Promise<void>
@@ -71,6 +73,7 @@ export class ApiError extends Error {
     public body?: unknown,
   ) {
     super(message)
+    this.name = "ApiError"
   }
 }
 
