@@ -9,6 +9,7 @@ import {
   defaultModel,
   listModels,
   projectIDFor,
+  searchSessions,
   sessionMessages,
   sessionYoloState,
   setAutoApproveAll,
@@ -133,5 +134,22 @@ describe("config.yaml and auto-approve seams", () => {
       setAutoApproveAll(false)
     }
     expect(sessionYoloState("ses_x")).toBe(false)
+  })
+
+  test("searchSessions uses messages_fts for message content and falls back cleanly on bad FTS syntax", () => {
+    const raw = new Database(process.env.HERMES_CANVAS_DB!)
+    raw.exec(
+      `INSERT INTO sessions (id, source, started_at, cwd, title) VALUES ('ses_fts_1', 'cli', ${Date.now() / 1000}, '/repo/fts', 'Unrelated')`,
+    )
+    raw.exec(
+      `INSERT INTO sessions (id, source, started_at, cwd, title) VALUES ('ses_fts_2', 'cli', ${Date.now() / 1000}, '/repo/quote', 'Alpha"unclosed title')`,
+    )
+    raw.exec(
+      `INSERT INTO messages (session_id, role, content, timestamp) VALUES ('ses_fts_1', 'user', 'zebrafish telemetry payload', ${Date.now() / 1000})`,
+    )
+    raw.close()
+
+    expect(searchSessions("zebrafish").map((s) => s.id)).toEqual(["ses_fts_1"])
+    expect(searchSessions("Alpha\"unclosed").map((s) => s.id)).toEqual(["ses_fts_2"])
   })
 })

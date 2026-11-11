@@ -31,7 +31,8 @@ If the delegate_task tool is unavailable, do the work directly.`
 
 /** Wrap a task for a team launch without burying the user's own words. */
 export function teamPrompt(text: string): string {
-  return `${text.trim()}${TEAM_RULES}`
+  const body = text.trim()
+  return body ? `${body}${TEAM_RULES}` : ""
 }
 
 /** The exact prompt sent to a newly created session. */
@@ -71,5 +72,9 @@ export function parseMention(text: string, destinations: LaunchDestination[]): M
 export function missionLabel(text: string, max = 46): string {
   const line = text.trim().split(/\r?\n/, 1)[0]?.trim() ?? ""
   if (!line) return "Untitled task"
-  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line
+  const cap = Number.isFinite(max) ? Math.max(0, Math.floor(max)) : 46
+  if (cap === 0) return ""
+  if (line.length <= cap) return line
+  if (cap === 1) return "…"
+  return `${line.slice(0, cap - 1).trimEnd()}…`
 }

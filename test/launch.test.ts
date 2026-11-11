@@ -20,12 +20,22 @@ describe("teamPrompt", () => {
     const out = teamPrompt("  ship it  ")
     expect(out.startsWith("ship it\n")).toBe(true)
   })
+
+  it("returns empty string for empty or whitespace-only tasks", () => {
+    expect(teamPrompt("")).toBe("")
+    expect(teamPrompt("   \n\t ")).toBe("")
+  })
 })
 
 describe("launchPrompt", () => {
   it("adds team rules only in team mode", () => {
     expect(launchPrompt("do work", false)).toBe("do work")
     expect(launchPrompt("do work", true)).toContain("delegate_task")
+  })
+
+  it("returns empty string for blank tasks in either mode", () => {
+    expect(launchPrompt("   ", true)).toBe("")
+    expect(launchPrompt("   ", false)).toBe("")
   })
 })
 
@@ -57,13 +67,38 @@ describe("parseMention", () => {
 
   it("does not consume a mention with no task after it", () => {
     expect(parseMention("@hermes-canvas", groups)).toEqual({ text: "@hermes-canvas" })
+    expect(parseMention("@hermes-canvas   ", groups)).toEqual({ text: "@hermes-canvas" })
+  })
+
+  it("handles Windows backslash paths and single-destination label/folder prefix overlap", () => {
+    const winGroups = [
+      { label: "Alpha App", directory: "C:\\Users\\dev\\code\\alpha-repo\\" },
+      { label: "Beta", directory: "D:\\work\\beta" },
+    ]
+    expect(parseMention("@alpha-repo ship it", winGroups)).toEqual({
+      text: "ship it",
+      directory: "C:\\Users\\dev\\code\\alpha-repo\\",
+    })
+    expect(parseMention("@alp check status", winGroups)).toEqual({
+      text: "check status",
+      directory: "C:\\Users\\dev\\code\\alpha-repo\\",
+    })
   })
 })
 
 describe("missionLabel", () => {
   it("uses the first line and caps long labels", () => {
     expect(missionLabel("Fix the tests\nand then deploy")).toBe("Fix the tests")
+    expect(missionLabel("Line one\r\nLine two")).toBe("Line one")
     expect(missionLabel("x".repeat(80))).toHaveLength(46)
     expect(missionLabel("   ")).toBe("Untitled task")
+  })
+
+  it("handles small or non-finite max bounds cleanly", () => {
+    expect(missionLabel("abcdef", 0)).toBe("")
+    expect(missionLabel("abcdef", -3)).toBe("")
+    expect(missionLabel("abcdef", 1)).toBe("…")
+    expect(missionLabel("a", 1)).toBe("a")
+    expect(missionLabel("x".repeat(80), Number.NaN)).toHaveLength(46)
   })
 })

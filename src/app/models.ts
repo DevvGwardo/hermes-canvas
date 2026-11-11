@@ -6,12 +6,17 @@ import type { ModelRef } from "./types"
 
 const KEY = "occ.model"
 
-export function defaultModel(): ModelRef | undefined {
+export function defaultModel(kind?: Backend["kind"]): ModelRef | undefined {
   try {
-    const v = localStorage.getItem(KEY)
+    const v = localStorage.getItem(KEY)?.trim()
     if (!v) return undefined
     const i = v.indexOf("/")
-    return i > 0 ? { providerID: v.slice(0, i), id: v.slice(i + 1) } : undefined
+    if (i <= 0) return undefined
+    const providerID = v.slice(0, i).trim()
+    const id = v.slice(i + 1).trim()
+    if (!providerID || !id) return undefined
+    if (kind === "live" && providerID === "demo" && id === "demo-model") return undefined
+    return { providerID, id }
   } catch {
     return undefined
   }
@@ -19,14 +24,16 @@ export function defaultModel(): ModelRef | undefined {
 
 export function setDefaultModel(m: ModelRef | undefined) {
   try {
-    if (m) localStorage.setItem(KEY, `${m.providerID}/${m.id}`)
+    const providerID = m?.providerID?.trim()
+    const id = m?.id?.trim()
+    if (providerID && id) localStorage.setItem(KEY, `${providerID}/${id}`)
     else localStorage.removeItem(KEY)
   } catch {
     /* private mode */
   }
 }
 
-export const modelLabel = (m?: ModelRef | null) => (m?.id ? m.id : "Default model")
+export const modelLabel = (m?: ModelRef | null) => (m?.id?.trim() ? m.id.trim() : "Default model")
 
 // Caches are per-backend (WeakMap), not a single module singleton. Production
 // uses exactly one Backend instance (main.ts), so this behaves identically

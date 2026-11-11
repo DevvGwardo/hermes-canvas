@@ -23,6 +23,13 @@ export function makeHermesHome(): string {
       tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL,
       finish_reason TEXT, reasoning TEXT
     );
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(session_id UNINDEXED, content);
+    CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts(rowid, session_id, content) VALUES (new.id, new.session_id, COALESCE(new.content, ''));
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+      DELETE FROM messages_fts WHERE rowid = old.id;
+    END;
   `)
   const t = Date.now() / 1000
   const addSession = db.prepare(
@@ -57,7 +64,7 @@ export function makeHermesHome(): string {
   process.env.HERMES_HOME = home
   process.env.HERMES_CANVAS_DB = join(home, "state.db")
   process.env.HERMES_CANVAS_VIEWED = join(home, "canvas_viewed.json")
-  process.env.HERMES_BIN = `bun ${join(import.meta.dir, "fake-hermes.ts")}`
+  process.env.HERMES_BIN = `bun "${join(import.meta.dir, "fake-hermes.ts")}"`
   process.env.HERMES_CANVAS_PROMPT_CWD = home
   return home
 }

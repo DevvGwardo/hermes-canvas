@@ -1,4 +1,4 @@
-import { describe, expect, it, jest } from "bun:test"
+import { afterEach, describe, expect, it, jest } from "bun:test"
 import type { Backend } from "../src/app/backend"
 import { ALLOW_ALL, Store } from "../src/app/store"
 import type { FormInfo, PermissionRequest, Session } from "../src/app/types"
@@ -160,7 +160,7 @@ describe("Store — syncAsks prompt reconcile", () => {
   })
 
   it("a failing permissions fetch clears only that side", async () => {
-    const { store, setPerms, setForms, setFailPerms } = await loadedStore()
+    const { store, setForms, setFailPerms } = await loadedStore()
     setFailPerms(true)
     setForms([form("f1")])
     await syncAsks(store, "s1") // each side catches separately
@@ -215,8 +215,182 @@ describe("Store — syncAsks prompt reconcile", () => {
     setPerms([req("p2")]) // p1 was answered; the server now reports only p2
     await syncAsks(store, "s1")
     await flush()
-    expect(replies.map((r) => r.requestID)).toEqual(["p1", "p2"]) // the finally cleanup let the retry through
+  expect(replies.map((r) => r.requestID)).toEqual(["p1", "p2"]) // the finally cleanup let the retry through
     expect(store.permissions.has("s1")).toBe(false)
     expect(onAutoApproved).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("Store — sync races, touchParent, approve dedupe, autoApprove sync & stop()", () => {
+  const g = globalThis as Record<string, unknown>
+  const origStorage = g.localStorage
+
+  afterEach(() => {
+    jest.useRealTimers()
+    if (origStorage === undefined) delete g.localStorage
+    else g.localStorage = origStorage
+  })
+
+  it("touches parent cards when subagent asks or active state change", async () => {
+    const { store, setActive, setPerms } = await loadedStore([
+      sess("p1s"),
+      sess("sub1", { parentID: "p1s" }),
+    ])
+    store["dirtyCards"].clear()
+    setActive(["sub1"])
+    await syncActive(store)
+    expect(store["dirtyCards"].has("sub1")).toBe(true)
+    expect(store["dirtyCards"].has("p1s")).toBe(true)
+
+    store["dirtyCards"].clear()
+    setPerms([req("per1", "sub1")])
+    await syncAsks(store, "sub1")
+    expect(store["dirtyCards"].has("sub1")).toBe(true)
+    expect(store["dirtyCards"].has("p1s")).toBe(true)
+  })
+
+  it("ignores stale syncActive and syncAsks snapshots when live events arrive mid-fetch", async () => {
+    let resolveActive!: (v: Set<string>) => void
+    let resolvePerms!: (v: PermissionRequest[]) => void
+    const b = {
+      kind: "live" as const,
+      listProjects: async () => [],
+      listSessions: async () => [sess("s1")],
+      active: () => new Promise<Set<string>>((r) => (resolveActive = r)),
+      permissions: () => new Promise<PermissionRequest[]>((r) => (resolvePerms = r)),
+      forms: async () => [],
+    } as unknown as Backend
+    const store = new Store(b)
+    await (async () => {
+      const p = store.reload()
+      resolveActive(new Set())
+      await p
+    })()
+
+    const activePoll = syncActive(store)
+    ;(store as any).onEvent({ id: "e1", type: "session.execution.started", data: { sessionID: "s1" } })
+    resolveActive(new Set()) // stale snapshot says s1 not running
+    await activePoll
+    expect(store.running.has("s1")).toBe(true)
+
+    const askPoll = syncAsks(store, "s1")
+    ;(store as any).onEvent({ id: "e2", type: "permission.asked", data: req("live1", "s1") })
+    resolvePerms([]) // stale snapshot says no asks
+    await askPoll
+    expect(store.permissions.get("s1")?.map((p) => p.id)).toEqual(["live1"])
+  })
+
+  it("syncActive clears liveText when a session drops and approve() dedupes return values", async () => {
+    const replies: string[] = []
+    let releaseReply!: () => void
+    const b = {
+      kind: "live" as const,
+      listProjects: async () => [],
+      listSessions: async () => [sess("p1s"), sess("sub1", { parentID: "p1s" })],
+      active: async () => new Set<string>(),
+      permissions: async () => [],
+      forms: async () => [],
+      setSessionPermissions: async () => {},
+      replyPermission: async (_sid: string, rid: string) => {
+        replies.push(rid)
+        if (rid === "per1") await new Promise<void>((r) => (releaseReply = r))
+      },
+    } as unknown as Backend
+    const store = new Store(b)
+    await store.reload()
+
+    store.running.add("p1s")
+    store.liveText.set("p1s", "partial stream")
+    await syncActive(store)
+    expect(store.liveText.has("p1s")).toBe(false)
+
+    // In-flight approve returns false for duplicate call so approveAllPending does not overcount
+    store.permissions.set("p1s", [req("per1", "p1s"), req("per2", "p1s")])
+    const first = store.approve(req("per1", "p1s"))
+    const batch = await store.approveAllPending()
+    expect(batch).toBe(1) // only per2 went through via batch; per1 was already in flight
+    releaseReply()
+    expect(await first).toBe(true)
+    expect(await store.approve(req("x", "p1s"))).toBe(true)
+
+    // setSessionAutoApprove approves pre-existing subagent requests too and handles replaced Session object
+    store.permissions.set("sub1", [req("sub_per", "sub1")])
+    store.setSessionAutoApprove("p1s", true)
+    store.sessions.set("p1s", sess("p1s")) // simulate concurrent refresh replacement while await in flight
+    await flush()
+    expect(replies).toContain("sub_per")
+    expect(store.sessions.get("p1s")!.permissions).toEqual([ALLOW_ALL])
+  })
+
+  it("syncs autoApproveAll from localStorage to backend on start/reload/toggle and stop() cancels pending timers", async () => {
+    jest.useFakeTimers()
+    const storage: Record<string, string> = { "hermes-canvas.autoApprove": "1" }
+    g.localStorage = {
+      getItem: (k: string) => (k in storage ? storage[k]! : null),
+      setItem: (k: string, v: string) => {
+        storage[k] = v
+      },
+      removeItem: (k: string) => delete storage[k],
+    }
+
+    const autoCalls: boolean[] = []
+    let activeCount = 0
+    let recentCount = 0
+    let unsubCount = 0
+    let resolveReloadList!: (s: Session[]) => void
+    const b = {
+      kind: "live" as const,
+      listProjects: async () => [],
+      listSessions: () => {
+        recentCount++
+        return new Promise<Session[]>((r) => (resolveReloadList = r))
+      },
+      active: async () => {
+        activeCount++
+        return new Set<string>()
+      },
+      permissions: async () => [],
+      forms: async () => [],
+      setAutoApproveAll: async (on: boolean) => {
+        autoCalls.push(on)
+      },
+      subscribe: () => () => {
+        unsubCount++
+      },
+    } as unknown as Backend
+
+    const store = new Store(b)
+    expect(store.autoApproveAll).toBe(true)
+
+    // stop() called mid-start must abort reload and prevent pollTimer / recentTimer from starting
+    const starting = store.start()
+    store.stop()
+    resolveReloadList([sess("s1")])
+    await starting
+    expect(unsubCount).toBe(1)
+    expect(store.sessions.size).toBe(0)
+    expect(autoCalls).toEqual([true])
+    const baseActive = activeCount
+    const baseRecent = recentCount
+    jest.advanceTimersByTime(60_000)
+    expect(activeCount).toBe(baseActive)
+    expect(recentCount).toBe(baseRecent)
+
+    // Schedule preview refresh + card flush, then stop() clears both
+    ;(store as any).refreshPreviewSoon("s1", 500)
+    store.touchCard("s1")
+    store.stop()
+    expect(store["refreshTimers"].size).toBe(0)
+    expect(store["flushScheduled"]).toBe(false)
+
+    // Reconnect reload re-syncs autoApproveAll while toggle off syncs false
+    const reloading = store.reload()
+    resolveReloadList([sess("s1")])
+    await reloading
+    expect(autoCalls).toEqual([true, true])
+
+    store.setAutoApproveAll(false)
+    expect(storage["hermes-canvas.autoApprove"]).toBe("0")
+    expect(autoCalls).toEqual([true, true, false])
   })
 })

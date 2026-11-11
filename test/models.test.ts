@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import type { Backend, ModelOption } from "../src/app/backend"
 import { defaultModel, modelLabel, models, serverDefault, setDefaultModel } from "../src/app/models"
-import type { ModelRef } from "../src/app/types"
 
 // models.ts is the canvas's model memory: the last-picked model persists under
 // `occ.model`, and the model lists are promise-cached per-backend (WeakMap)
@@ -77,10 +76,16 @@ describe("last-picked model persistence", () => {
   test("starts unset and treats malformed stored values as unset", () => {
     expect(defaultModel()).toBeUndefined() // nothing stored yet
     const store = g.localStorage as Storage
-    for (const bad of ["", "no-slash-at-all", "/id-without-provider", "/"]) {
+    for (const bad of ["", "no-slash-at-all", "/id-without-provider", "/", "anthropic/", "anthropic/   ", "   /id"]) {
       store.setItem(KEY, bad)
       expect(defaultModel()).toBeUndefined()
     }
+  })
+
+  test("ignores demo placeholder when reading for a live backend", () => {
+    setDefaultModel({ providerID: "demo", id: "demo-model" })
+    expect(defaultModel("demo")).toEqual({ providerID: "demo", id: "demo-model" })
+    expect(defaultModel("live")).toBeUndefined()
   })
 
   test("splits on the FIRST slash only, so ids may contain slashes", () => {
@@ -89,11 +94,15 @@ describe("last-picked model persistence", () => {
     expect(defaultModel()).toEqual({ providerID: "openrouter", id: "org/model-name:variant" })
   })
 
-  test("clearing the choice removes the key entirely", () => {
+  test("clearing the choice or passing blank fields removes the key entirely", () => {
     setDefaultModel({ providerID: "p", id: "m" })
     setDefaultModel(undefined)
     expect((g.localStorage as Storage).dump()[KEY]).toBeUndefined()
     expect(defaultModel()).toBeUndefined()
+
+    setDefaultModel({ providerID: "p", id: "m" })
+    setDefaultModel({ providerID: "p", id: "   " })
+    expect((g.localStorage as Storage).dump()[KEY]).toBeUndefined()
   })
 
   test("a denying store (private mode) never breaks read or write", () => {
@@ -109,6 +118,7 @@ describe("modelLabel()", () => {
     expect(modelLabel(undefined)).toBe("Default model")
     expect(modelLabel(null)).toBe("Default model")
     expect(modelLabel({ providerID: "p", id: "" })).toBe("Default model")
+    expect(modelLabel({ providerID: "p", id: "   " })).toBe("Default model")
   })
 
   test("shows the model id, not the provider", () => {

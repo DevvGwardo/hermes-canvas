@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test"
+import { afterEach, beforeEach, expect, jest, test } from "bun:test"
 import { Store, buildPreview } from "../src/app/store"
 import { previewBlocks } from "../src/app/markdown"
 import type { Backend, ConnectionState } from "../src/app/backend"
@@ -219,4 +219,41 @@ test("a failed resync after a reconnect still lands live", async () => {
   await flush()
   expect(store.connection).toBe("live") // the failed resync did not wedge the state
   expect(store.sessions.size).toBe(0) // and the store was left as it was
+})
+
+test("in-flight loadPreview invalidated by reload or text.ended does not drop the newer refresh", async () => {
+  jest.useFakeTimers()
+  try {
+    await store.start()
+    store.wantPreview("a")
+    expect(fx.calls).toEqual(["a"])
+
+    // While first messages("a") is still pending, an end-of-turn refresh fires
+    fx.emit({ id: "e1", type: "session.text.ended", data: { sessionID: "a" } })
+    jest.advanceTimersByTime(300)
+    expect(fx.calls).toEqual(["a"]) // queued set prevents overlapping fetch while in flight
+
+    // Old fetch resolves; because previewVersion bumped, it re-queues a fresh fetch automatically
+    fx.pending[0].resolve(page([assistant("stale mid-turn text")]))
+    await flush()
+    expect(fx.calls).toEqual(["a", "a"])
+
+    fx.pending[1].resolve(page([assistant("final turn text")]))
+    await flush()
+    expect(store.previews.get("a")).toEqual(previewBlocks("final turn text"))
+    store.wantPreview("a")
+    expect(fx.calls).toEqual(["a", "a"]) // fresh now
+  } finally {
+    jest.useRealTimers()
+  }
+})
+
+test("deleting a session discards an in-flight preview fetch", async () => {
+  await store.start()
+  store.addSessions([session("a", "Temp")])
+  store.wantPreview("a")
+  fx.emit({ id: "ed", type: "session.deleted", data: { sessionID: "a" } })
+  fx.pending[0].resolve(page([assistant("ghost")]))
+  await flush()
+  expect(store.previews.has("a")).toBe(false)
 })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { Backend } from "../src/app/backend"
-import { Store } from "../src/app/store"
+import { ALLOW_ALL, REVIEW_WINDOW, Store } from "../src/app/store"
 import type { Session } from "../src/app/types"
 
 // The canvas list is only as accurate as two store paths: refreshRecent()
@@ -219,5 +219,92 @@ describe("Store — groups() ordering", () => {
     const g = store.groups()
     expect(g.length).toBe(1)
     expect(g[0]!.sessions.map((s) => s.id)).toEqual(["p1s"]) // sub1 never gets its own row
+  })
+
+  it("ranks expired unseen failures alongside done so groups() agrees with statusCounts/inFilter", async () => {
+    const expiredIdle = NOW - REVIEW_WINDOW - 5_000
+    const { store } = await loadedStore([
+      sess("expired-fail", { outcome: "failed", time: { created: 1, updated: 500, idle: expiredIdle } }),
+      sess("recent-done", { outcome: "succeeded", time: { created: 2, updated: 900, idle: NOW - 1_000, viewed: NOW } }),
+    ])
+    expect(store.groups()[0]!.sessions.map((s) => s.id)).toEqual(["recent-done", "expired-fail"])
+  })
+})
+
+describe("Store — D2 metadata preservation, reload cleanup & graph guards", () => {
+  it("refreshRecent preserves undefined permissions and local failed/interrupted outcomes until idle changes", async () => {
+    const fail = sess("s_fail", {
+      outcome: "failed",
+      permissions: [ALLOW_ALL],
+      time: { created: 100, updated: 200, idle: 300, viewed: 400 },
+    })
+    const { store, setList } = await loadedStore([fail])
+    store.previews.set("s_fail", { text: "old", bullets: [] })
+
+    // Server returns same idle with outcome omitted or defaulted to "succeeded" + newer local viewed
+    setList([
+      sess("s_fail", {
+        outcome: undefined,
+        permissions: undefined,
+        time: { created: 100, updated: 200, idle: 300, viewed: 100 },
+      }),
+    ])
+    await refresh(store)
+    expect(store.sessions.get("s_fail")).toBe(fail) // nothing effectively changed -> kept reference
+    expect(store.sessions.get("s_fail")!.outcome).toBe("failed")
+    expect(store.sessions.get("s_fail")!.permissions).toEqual([ALLOW_ALL])
+
+    // Once idle advances (new turn finished), update outcome & mark preview stale
+    setList([
+      sess("s_fail", {
+        outcome: "succeeded",
+        permissions: [ALLOW_ALL],
+        time: { created: 100, updated: 500, idle: 500, viewed: 100 },
+      }),
+    ])
+    await refresh(store)
+    expect(store.sessions.get("s_fail")!.outcome).toBe("succeeded")
+    expect(store["previewStale"].has("s_fail")).toBe(true)
+  })
+
+  it("refreshRecent detects parentID/model/cost changes and reload prunes vanished sessions", async () => {
+    const s1 = sess("s1", { model: { providerID: "p", id: "m1" }, cost: 1 })
+    const s2 = sess("s2")
+    const { store, setList } = await loadedStore([s1, s2])
+    store.previews.set("s2", { text: "p", bullets: [] })
+    store.permissions.set("s2", [{ id: "per", sessionID: "s2", action: "shell", resources: [] }])
+    store.activity.set("s2", "Working…")
+
+    // s1 changes cost/model/parentID
+    store["structureDirty"] = false
+    setList([
+      sess("s1", { parentID: "s2", model: { providerID: "p", id: "m2" }, cost: 2 }),
+      s2,
+    ])
+    await refresh(store)
+    expect(store["structureDirty"]).toBe(true)
+    expect(store.sessions.get("s1")!.cost).toBe(2)
+    expect(store.sessions.get("s1")!.model?.id).toBe("m2")
+    expect(store.subagentCount("s2")).toBe(1)
+
+    // reload removes s2 when server no longer returns it (or archives it)
+    setList([sess("s1")])
+    await store.reload()
+    expect(store.previews.has("s2")).toBe(false)
+    expect(store.permissions.has("s2")).toBe(false)
+    expect(store.activity.has("s2")).toBe(false)
+  })
+
+  it("addSessions skips archived entries and roots() breaks parent cycles cleanly", async () => {
+    const { store } = await loadedStore([])
+    store.addSessions([
+      sess("self", { parentID: "self" }),
+      sess("cyc_a", { parentID: "cyc_b" }),
+      sess("cyc_b", { parentID: "cyc_a" }),
+      sess("arch", { time: { created: 1, updated: 1, archived: 10 } }),
+    ])
+    expect(store.sessions.has("arch")).toBe(false)
+    expect(store.subagentCount("self")).toBe(0)
+    expect(store.roots().map((s) => s.id).sort()).toEqual(["cyc_a", "self"])
   })
 })

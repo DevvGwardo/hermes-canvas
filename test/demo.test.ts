@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, jest, test } from "bun:test"
 import { DemoBackend } from "../src/app/demo"
 import { Store } from "../src/app/store"
 
@@ -165,5 +165,83 @@ describe("demo backend", () => {
     expect(events.some((e) => e.type === "permission.replied")).toBe(true)
     await expect(backend.replyForm()).resolves.toBeUndefined()
     await expect(backend.cancelForm()).resolves.toBeUndefined()
+    backend.stop()
+  })
+
+  test("interrupted prompted session never flips back to succeeded when its sleep resolves", async () => {
+    jest.useFakeTimers()
+    const backend = new DemoBackend()
+    try {
+      const events: Array<{ type: string; data: any }> = []
+      backend.subscribe((ev) => events.push({ type: ev.type, data: ev.data }), () => {})
+      const created = await backend.createSession("C:\\Users\\you\\code\\win-proj")
+      expect((await backend.listProjects()).some((p) => p.name === "win-proj")).toBe(true)
+
+      await backend.prompt(created.id, {
+        text: "run check",
+        files: [{ uri: "data:image/png;base64,abc", name: "shot.png" }],
+      })
+      const active = await backend.active()
+      expect(active.has(created.id)).toBe(true)
+
+      // Files were stored on the pushed user message
+      const page = await backend.messages(created.id, 10)
+      const userMsg = page.data.find((m) => m.type === "user")
+      expect((userMsg as any)?.files?.[0]).toMatchObject({ name: "shot.png", mime: "image/png" })
+
+      events.length = 0
+      await backend.interrupt(created.id)
+      expect((await backend.getSession(created.id)).outcome).toBe("interrupted")
+
+      // Advance well past reasoning/tool sleeps; old loop must NOT emit succeeded
+      jest.advanceTimersByTime(10_000)
+      await Promise.resolve()
+      expect((await backend.getSession(created.id)).outcome).toBe("interrupted")
+      expect(events.some((e) => e.type === "session.execution.succeeded" && e.data?.sessionID === created.id)).toBe(false)
+
+      // Immediate unsubscribe cancels the deferred connected event
+      const late: string[] = []
+      const off = backend.subscribe((ev) => late.push(ev.type), (s) => late.push(s))
+      off()
+      jest.advanceTimersByTime(50)
+      expect(late).toEqual([])
+    } finally {
+      backend.stop()
+      jest.useRealTimers()
+    }
+  })
+
+  test("seeded running session interrupted before delayed startup stays stopped, listSessions honors max, and missing ids no-op", async () => {
+    jest.useFakeTimers()
+    const backend = new DemoBackend()
+    try {
+      const sessions = await backend.listSessions(5)
+      expect(sessions).toHaveLength(5)
+      const running = await backend.active()
+      const seedId = [...running][0]!
+      await backend.interrupt(seedId)
+      jest.advanceTimersByTime(5000)
+      expect((await backend.active()).has(seedId)).toBe(false)
+      expect((await backend.getSession(seedId)).outcome).toBe("interrupted")
+
+      const events: string[] = []
+      backend.subscribe((ev) => events.push(ev.type), () => {})
+      jest.advanceTimersByTime(1)
+      events.length = 0
+      await backend.rename("missing-id", "x")
+      await backend.switchModel("missing-id", { id: "m", providerID: "p" })
+      await backend.cancelInbox("missing-id", "i1")
+      await backend.replyPermission("missing-id", "per1", "once")
+      expect(events).toEqual([])
+
+      await backend.setAutoApproveAll(true)
+      expect(backend.autoApproveAll).toBe(true)
+
+      const pageBadCursor = await backend.messages(seedId, 5, "not-a-number")
+      expect(pageBadCursor.data.length).toBeGreaterThan(0)
+    } finally {
+      backend.stop()
+      jest.useRealTimers()
+    }
   })
 })

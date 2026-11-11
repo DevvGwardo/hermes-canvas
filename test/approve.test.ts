@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, jest, test } from "bun:test"
 import { autoApprovedNotices, autoApproveToggle } from "../src/app/approve"
+import type { Backend } from "../src/app/backend"
+import { Store } from "../src/app/store"
 import { toast } from "../src/app/toast"
 
 // approve.ts carries the safety interlock around `--yolo` (README: "turning it
@@ -287,4 +289,50 @@ test("a toast fades itself out when its window expires", () => {
   expect(t.classList.contains("in")).toBe(true) // still on screen just before its window
   jest.advanceTimersByTime(1)
   expect(t.classList.contains("in")).toBe(false) // the expiry timer removes the enter class
+})
+
+test("isolates toggles across stores, sets button type, and syncs external store updates", () => {
+  const s1 = fakeStore()
+  const s2 = fakeStore()
+  const b1 = toggle(s1) as any
+  const b2 = toggle(s2) as any
+  expect(b1.type).toBe("button")
+  expect(b2.type).toBe("button")
+
+  click(b1)
+  click(b1)
+  expect(s1.autoApproveAll).toBe(true)
+  expect(s2.autoApproveAll).toBe(false)
+  expect(b1.classList.contains("on")).toBe(true)
+  expect(b2.classList.contains("on")).toBe(false)
+  expect(b2.label.textContent).toBe("Auto-approve")
+
+  const realStore = new Store({ kind: "demo" } as unknown as Backend)
+  const liveBtn = autoApproveToggle(realStore) as unknown as FakeEl & { isConnected: boolean }
+  const detachedBtn = autoApproveToggle(realStore) as unknown as FakeEl & { isConnected: boolean }
+  liveBtn.isConnected = true
+  detachedBtn.isConnected = true
+  realStore.setAutoApproveAll(true)
+  expect(liveBtn.classList.contains("on")).toBe(true)
+  expect(detachedBtn.classList.contains("on")).toBe(true)
+
+  detachedBtn.isConnected = false
+  realStore.setAutoApproveAll(false)
+  expect(liveBtn.classList.contains("on")).toBe(false)
+  expect(detachedBtn.classList.contains("on")).toBe(true) // disconnected toggle was pruned
+})
+
+test("autoApprovedNotices handles empty resources and cleanup cancels pending bursts", () => {
+  const store = fakeStore()
+  const dispose = autoApprovedNotices(store as any)
+  store.onAutoApproved!({ sessionID: "ses_1", action: "bash", resources: [] })
+  jest.advanceTimersByTime(600)
+  expect(toasts()).toEqual(["Auto-approved bash (storefront)"])
+  clearToasts()
+
+  store.onAutoApproved!({ sessionID: "ses_1", action: "read", resources: ["/tmp/a"] })
+  dispose()
+  jest.advanceTimersByTime(600)
+  expect(toasts()).toEqual([])
+  expect(store.onAutoApproved).toBeUndefined()
 })

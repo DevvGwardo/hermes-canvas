@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test"
-import { Store } from "../src/app/store"
+import { ALLOW_ALL, Store } from "../src/app/store"
 import type { Backend } from "../src/app/backend"
 import type { Session } from "../src/app/types"
 
@@ -252,5 +252,128 @@ describe("Store — the session event switch", () => {
     fire("session.moved", { sessionID: "s1" })
     await flush() // the catch swallows it
     expect(store.sessions.get("s1")!.title).toBe("original")
+  })
+
+  test("session.created guards missing id and preserves local permissions & concurrent patches across getSession", async () => {
+    let resolveGet!: (s: Session) => void
+    ;(fx.backend as any).getSession = () => new Promise<Session>((r) => (resolveGet = r))
+
+    fire("session.created", {})
+    expect(store.sessions.size).toBe(0)
+
+    // Pre-existing session created locally via HTTP with ALLOW_ALL before SSE session.created arrives
+    store.addSessions([{ ...record("s1", "Initial"), permissions: [ALLOW_ALL] }])
+    fire("session.created", { sessionID: "s1" })
+    expect(store.sessions.get("s1")!.permissions).toEqual([ALLOW_ALL])
+
+    // Concurrent rename + usage + execution failure happen while getSession() is in flight
+    fire("session.renamed", { sessionID: "s1", title: "Live renamed" })
+    fire("session.usage.updated", { sessionID: "s1", cost: 4.2, tokens: { ...usage(), output: 77 } })
+    fire("session.execution.failed", { sessionID: "s1" }, { created: 99 })
+
+    resolveGet(record("s1", "Stale server snapshot"))
+    await flush()
+    const after = store.sessions.get("s1")!
+    expect(after.title).toBe("Live renamed")
+    expect(after.cost).toBe(4.2)
+    expect(after.tokens.output).toBe(77)
+    expect(after.outcome).toBe("failed")
+    expect(after.permissions).toEqual([ALLOW_ALL])
+  })
+
+  test("session.deleted cleans up all per-session state and prevents late refetch resurrection", async () => {
+    jest.useFakeTimers()
+    let resolveMoved!: (s: Session) => void
+    ;(fx.backend as any).getSession = () => new Promise<Session>((r) => (resolveMoved = r))
+
+    store.addSessions([record("s1")])
+    store.running.add("s1")
+    store.activity.set("s1", "Writing…")
+    store.liveText.set("s1", "hello")
+    store.previews.set("s1", { text: "p", bullets: [] })
+    store.permissions.set("s1", [{ id: "per1", sessionID: "s1", action: "shell", resources: [] }])
+    store.forms.set("s1", [{ id: "f1", sessionID: "s1", title: "Q", fields: [] }])
+    fire("session.tool.input.started", { sessionID: "s1", id: "t_orphan", name: "bash" })
+    fire("session.text.ended", { sessionID: "s1" }) // arms refreshTimer
+    fire("session.moved", { sessionID: "s1" })
+
+    fire("session.deleted", { sessionID: "s1" })
+    expect(store.sessions.has("s1")).toBe(false)
+    expect(store.running.has("s1")).toBe(false)
+    expect(store.activity.has("s1")).toBe(false)
+    expect(store.liveText.has("s1")).toBe(false)
+    expect(store.previews.has("s1")).toBe(false)
+    expect(store.pendingPermissionCount()).toBe(0)
+    expect(store.forms.has("s1")).toBe(false)
+    expect(store["toolNames"].has("t_orphan")).toBe(false)
+    expect(store["refreshTimers"].size).toBe(0)
+
+    resolveMoved(record("s1", "Resurrected"))
+    await flush()
+    expect(store.sessions.has("s1")).toBe(false)
+  })
+
+  test("session.moved rebuilds children, execution end clears liveText, tool fallbacks & inbox cancel work, and listeners isolate throws", async () => {
+    jest.useFakeTimers()
+    const g = globalThis as Record<string, unknown>
+    const origRaf = g.requestAnimationFrame
+    const origCancel = g.cancelAnimationFrame
+    try {
+      store.addSessions([record("p1")])
+      ;(fx.backend as any).getSession = async (id: string) => ({ ...record(id), parentID: "p1" })
+      fire("session.moved", { sessionID: "c1" })
+      await flush()
+      expect(store.subagentCount("p1")).toBe(1)
+
+      // tool.input.started ignores missing id; tool.called falls back to d.name; failed execution drops liveText + tools
+      fire("session.tool.input.started", { sessionID: "p1", name: "read" })
+      expect(store["toolNames"].has(undefined as any)).toBe(false)
+      fire("session.tool.called", { sessionID: "p1", id: "miss", name: "grep", input: { pattern: "foo" } })
+      expect(store.activity.get("p1")).toContain("Searching")
+      fire("session.text.started", { sessionID: "p1" })
+      fire("session.text.delta", { sessionID: "p1", delta: "draft" })
+      fire("session.execution.interrupted", { sessionID: "p1" })
+      expect(store.liveText.has("p1")).toBe(false)
+
+      // inbox.cancelled drops pendingUser
+      fire("session.inbox.enqueued", { sessionID: "p1", item: { type: "user", payload: { text: "queued q" } } })
+      expect(store.previews.get("p1")?.pendingUser).toBe("queued q")
+      fire("session.inbox.cancelled", { sessionID: "p1", inboxID: "i1" })
+      expect(store.previews.get("p1")?.pendingUser).toBeUndefined()
+
+      // Drain earlier pending flush timer before testing rAF sibling cancellation
+      jest.advanceTimersByTime(300)
+
+      // Store.on isolates throwing listeners and rAF flush cancels its sibling fallback timeout
+      let cardsSeen: string[] = []
+      let structureCalls = 0
+      g.requestAnimationFrame = (cb: () => void) => setTimeout(cb, 10)
+      g.cancelAnimationFrame = (h: number) => clearTimeout(h)
+      store.on({
+        structure: () => {
+          throw new Error("boom")
+        },
+      })
+      store.on({
+        structure: () => {
+          structureCalls++
+        },
+        cards: (ids) => {
+          cardsSeen = [...ids]
+        },
+      })
+      store.markStructure()
+      store.touchCard("p1")
+      jest.advanceTimersByTime(10)
+      expect(structureCalls).toBe(1)
+      expect(cardsSeen).toEqual(["p1"])
+      expect(store["flushTimer"]).toBeUndefined()
+    } finally {
+      jest.useRealTimers()
+      if (origRaf === undefined) delete g.requestAnimationFrame
+      else g.requestAnimationFrame = origRaf
+      if (origCancel === undefined) delete g.cancelAnimationFrame
+      else g.cancelAnimationFrame = origCancel
+    }
   })
 })

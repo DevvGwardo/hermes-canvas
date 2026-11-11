@@ -97,6 +97,13 @@ export class DemoBackend implements Backend {
   private running = new Set<string>()
   private subs = new Set<(ev: OcEvent) => void>()
   private projects: Project[] = PROJECTS.map(([id, name]) => ({ id, name, canonical: `/Users/you/code/${name}` }))
+  private autoApprove = false
+  private stopped = false
+  private seqToken = 0
+  private runToken = new Map<string, number>()
+  private timers = new Set<ReturnType<typeof setTimeout>>()
+  private sleepResolvers = new Set<() => void>()
+  private steered = new Map<string, string[]>()
 
   constructor() {
     const now = Date.now()
@@ -155,11 +162,15 @@ export class DemoBackend implements Backend {
       }
       if (seed.running) {
         this.running.add(id)
+        const token = ++this.seqToken
+        this.runToken.set(id, token)
         if (seed.user) {
           this.inboxes.set(id, [{ id: uid("msg"), sessionID: id, type: "user", payload: { text: seed.user }, delivery: "queue", time: { created: now } }])
         }
         const finishes = seed.title === "Nightly export to the warehouse"
-        setTimeout(() => this.loop(id, !finishes), 400 + Math.random() * 2500)
+        this.schedule(() => {
+          if (this.runToken.get(id) === token && this.running.has(id)) void this.loop(id, !finishes, undefined, token)
+        }, 400 + Math.random() * 2500)
       }
     }
     // One session blocked on a permission prompt.
@@ -170,35 +181,84 @@ export class DemoBackend implements Backend {
       ])
   }
 
+  get autoApproveAll() {
+    return this.autoApprove
+  }
+
+  stop() {
+    this.stopped = true
+    for (const t of this.timers) clearTimeout(t)
+    this.timers.clear()
+    for (const done of this.sleepResolvers) done()
+    this.sleepResolvers.clear()
+    this.running.clear()
+    this.runToken.clear()
+    this.steered.clear()
+    this.subs.clear()
+  }
+
+  private schedule(fn: () => void, ms: number) {
+    if (this.stopped) return
+    const t = setTimeout(() => {
+      this.timers.delete(t)
+      if (!this.stopped) fn()
+    }, ms)
+    this.timers.add(t)
+    return t
+  }
+
   // ---- event plumbing ----
 
   private emit(type: string, data: Record<string, any>) {
+    if (this.stopped) return
     const ev: OcEvent = { id: uid("evt"), type, created: Date.now(), data }
     for (const s of this.subs) s(ev)
   }
 
   subscribe(onEvent: (ev: OcEvent) => void, onState: (s: ConnectionState) => void) {
+    if (this.stopped) return () => {}
     this.subs.add(onEvent)
-    setTimeout(() => {
+    let active = true
+    this.schedule(() => {
+      if (!active || this.stopped) return
       onState("demo")
       onEvent({ id: uid("evt"), type: "server.connected", data: {} })
     }, 0)
-    return () => this.subs.delete(onEvent)
+    return () => {
+      active = false
+      this.subs.delete(onEvent)
+    }
   }
 
   // ---- simulated work ----
 
   private sleep(ms: number) {
-    return new Promise((r) => setTimeout(r, ms))
+    if (this.stopped) return Promise.resolve()
+    return new Promise<void>((r) => {
+      let done = false
+      const finish = () => {
+        if (done) return
+        done = true
+        this.timers.delete(t)
+        this.sleepResolvers.delete(finish)
+        r()
+      }
+      const t = setTimeout(finish, ms)
+      this.timers.add(t)
+      this.sleepResolvers.add(finish)
+    })
   }
 
-  private async loop(id: string, forever: boolean, replyTo?: string) {
+  private async loop(id: string, forever: boolean, replyTo?: string, existingToken?: number) {
     const s = this.sessions.get(id)
-    if (!s) return
+    if (!s || this.stopped) return
+    const token = existingToken ?? ++this.seqToken
+    this.runToken.set(id, token)
     this.running.add(id)
+    const active = () => !this.stopped && this.running.has(id) && this.runToken.get(id) === token
     this.emit("session.execution.started", { sessionID: id })
     let rounds = 0
-    while (this.running.has(id)) {
+    while (active()) {
       const m: Assistant = {
         type: "assistant",
         id: uid("msg"),
@@ -215,23 +275,26 @@ export class DemoBackend implements Backend {
       m.content.push({ type: "reasoning", text: "", time: { created: Date.now() } })
       await this.sleep(900 + Math.random() * 900)
       ;(m.content[0] as any).time.completed = Date.now()
+      if (!active()) break
       this.emit("session.reasoning.ended", { sessionID: id, assistantMessageID: aid, ordinal: 0 })
 
       const tools = 1 + Math.floor(Math.random() * 3)
-      for (let i = 0; i < tools && this.running.has(id); i++) {
+      for (let i = 0; i < tools && active(); i++) {
         const st = SCRIPT[Math.floor(Math.random() * SCRIPT.length)]
         const call = uid("call")
         const part = { type: "tool" as const, id: call, name: st.tool, state: { status: "streaming" } as any, time: { created: Date.now() } }
         m.content.push(part)
         this.emit("session.tool.input.started", { sessionID: id, assistantMessageID: aid, id: call, name: st.tool })
         await this.sleep(250)
+        if (!active()) break
         part.state = { status: "running", input: st.input, metadata: {} }
         this.emit("session.tool.called", { sessionID: id, assistantMessageID: aid, id: call, input: st.input, executed: false })
         await this.sleep(900 + Math.random() * 1800)
+        if (!active()) break
         part.state = { status: "completed", input: st.input, content: [{ type: "text", text: st.output }] } as any
         this.emit("session.tool.success", { sessionID: id, assistantMessageID: aid, id: call, content: [{ type: "text", text: st.output }], executed: true })
       }
-      if (!this.running.has(id)) break
+      if (!active()) break
 
       const reply = replyTo
         ? `On “${replyTo.slice(0, 60)}”: ${REPLIES[Math.floor(Math.random() * REPLIES.length)]}`
@@ -241,22 +304,44 @@ export class DemoBackend implements Backend {
       m.content.push(textPart)
       this.emit("session.text.started", { sessionID: id, assistantMessageID: aid, ordinal: 0 })
       for (const word of reply.split(/(?<= )/)) {
-        if (!this.running.has(id)) break
+        if (!active()) break
         textPart.text += word
         this.emit("session.text.delta", { sessionID: id, assistantMessageID: aid, ordinal: 0, delta: word })
         await this.sleep(28 + Math.random() * 50)
       }
+      if (!active()) break
       this.emit("session.text.ended", { sessionID: id, assistantMessageID: aid, ordinal: 0 })
       m.time.completed = Date.now()
       m.finish = "stop"
       s.time.updated = Date.now()
+      const addIn = 180 + Math.floor(Math.random() * 220)
+      const addOut = 90 + Math.floor(Math.random() * 160)
+      s.tokens = {
+        ...s.tokens,
+        input: (s.tokens?.input ?? 0) + addIn,
+        output: (s.tokens?.output ?? 0) + addOut,
+      }
+      s.cost = Number(((s.cost ?? 0) + addIn * 0.000003 + addOut * 0.000015).toFixed(6))
+      this.emit("session.usage.updated", { sessionID: id, cost: s.cost, tokens: structuredClone(s.tokens) })
       this.emit("session.step.ended", { sessionID: id, assistantMessageID: aid, finish: "stop" })
       rounds++
 
-      // Deliver a queued message, if any, as the next turn.
+      // Pick up a steered or queued message as the next turn.
+      const steeredMsg = this.steered.get(id)?.shift()
+      if (steeredMsg) {
+        replyTo = steeredMsg
+        continue
+      }
       const queued = this.inboxes.get(id)?.shift()
       if (queued) {
-        this.msgs.get(id)!.push({ type: "user", id: queued.id, time: { created: Date.now() }, text: queued.payload.text ?? "" })
+        const files = (queued.payload as { files?: any[] }).files
+        this.msgs.get(id)!.push({
+          type: "user",
+          id: queued.id,
+          time: { created: Date.now() },
+          text: queued.payload.text ?? "",
+          ...(files?.length ? { files } : {}),
+        })
         this.emit("session.inbox.delivered", { sessionID: id, inboxID: queued.id })
         replyTo = queued.payload.text
         continue
@@ -264,10 +349,12 @@ export class DemoBackend implements Backend {
       if (!forever || rounds > 50) break
       await this.sleep(2500 + Math.random() * 3000)
     }
-    if (this.running.delete(id) || !forever) {
+    if (!this.stopped && this.runToken.get(id) === token && this.running.delete(id)) {
+      this.runToken.delete(id)
+      const now = Date.now()
       s.outcome = "succeeded"
-      s.time.updated = Date.now()
-      s.time.idle = Date.now()
+      s.time.updated = now
+      s.time.idle = now
       this.emit("session.execution.succeeded", { sessionID: id })
     }
   }
@@ -277,8 +364,11 @@ export class DemoBackend implements Backend {
   async listProjects() {
     return this.projects
   }
-  async listSessions() {
-    return [...this.sessions.values()].map((s) => structuredClone(s))
+  async listSessions(max?: number) {
+    const all = [...this.sessions.values()].map((s) => structuredClone(s))
+    if (max === undefined) return all
+    const cap = Number.isFinite(max) ? Math.max(0, Math.floor(max)) : all.length
+    return all.sort((a, b) => b.time.updated - a.time.updated).slice(0, cap)
   }
   async searchSessions(query: string) {
     const q = query.toLowerCase()
@@ -294,8 +384,10 @@ export class DemoBackend implements Backend {
   }
   async messages(id: string, limit: number, cursor?: string): Promise<Page<Message>> {
     const all = this.msgs.get(id) ?? []
-    const end = cursor ? Number(cursor) : all.length
-    const start = Math.max(0, end - limit)
+    const parsed = cursor !== undefined ? Number(cursor) : all.length
+    const end = Number.isFinite(parsed) ? Math.max(0, Math.min(all.length, Math.floor(parsed))) : all.length
+    const lim = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50
+    const start = Math.max(0, end - lim)
     return {
       data: structuredClone(all.slice(start, end)).reverse(),
       cursor: { next: start > 0 ? String(start) : null },
@@ -328,17 +420,22 @@ export class DemoBackend implements Backend {
   }
   async switchModel(id: string, model: ModelRef) {
     const s = this.sessions.get(id)
-    if (s) s.model = model
+    if (!s) return
+    s.model = model
     this.emit("session.model.selected", { sessionID: id, model })
   }
   async setSessionPermissions(id: string, rules: PermissionRule[] | null) {
     const s = this.sessions.get(id)
     if (s) s.permissions = rules
   }
+  async setAutoApproveAll(on: boolean) {
+    this.autoApprove = on
+  }
   async createSession(directory: string, model?: ModelRef, permissions?: PermissionRule[]) {
     let proj = this.projects.find((p) => p.canonical === directory)
     if (!proj) {
-      proj = { id: uid("p"), name: directory.split("/").filter(Boolean).pop() ?? directory, canonical: directory }
+      const name = directory.split(/[/\\]/).filter(Boolean).pop() ?? (directory || "Session")
+      proj = { id: uid("p"), name, canonical: directory }
       this.projects.push(proj)
     }
     const now = Date.now()
@@ -361,20 +458,55 @@ export class DemoBackend implements Backend {
   async prompt(id: string, input: PromptInput) {
     const s = this.sessions.get(id)
     if (!s) throw new Error("Session not found")
-    const item: InboxItem = { id: uid("msg"), sessionID: id, type: "user", payload: { text: input.text }, delivery: input.delivery ?? "steer" }
+    const files = input.files?.length
+      ? input.files.map((f) => ({
+          uri: f.uri,
+          name: f.name,
+          mime: f.uri.startsWith("data:") ? f.uri.slice(5, f.uri.indexOf(";")) || "application/octet-stream" : "image/png",
+        }))
+      : undefined
+    const item: InboxItem = {
+      id: uid("msg"),
+      sessionID: id,
+      type: "user",
+      payload: { text: input.text, ...(files ? { files } : {}) },
+      delivery: input.delivery ?? "steer",
+    }
     this.emit("session.inbox.enqueued", { sessionID: id, inboxID: item.id, item })
-    if (this.running.has(id) && input.delivery === "queue") {
+    const wasRunning = this.running.has(id)
+    if (wasRunning && input.delivery === "queue") {
       if (!this.inboxes.has(id)) this.inboxes.set(id, [])
       this.inboxes.get(id)!.push(item)
       return
     }
-    this.msgs.get(id)!.push({ type: "user", id: item.id, time: { created: Date.now() }, text: input.text })
+    this.msgs.get(id)!.push({
+      type: "user",
+      id: item.id,
+      time: { created: Date.now() },
+      text: input.text,
+      ...(files ? { files } : {}),
+    })
     this.emit("session.inbox.delivered", { sessionID: id, inboxID: item.id })
     if (!s.title) {
-      s.title = input.text.slice(0, 48)
-      setTimeout(() => this.emit("session.renamed", { sessionID: id, title: s.title }), 1200)
+      s.title = input.text.trim().slice(0, 48) || (files?.[0]?.name ?? "")
+      if (s.title) {
+        this.schedule(() => {
+          if (this.sessions.get(id)?.title) this.emit("session.renamed", { sessionID: id, title: s.title })
+        }, 1200)
+      }
     }
-    if (!this.running.has(id)) void this.loop(id, false, input.text)
+    if (wasRunning) {
+      if (!this.steered.has(id)) this.steered.set(id, [])
+      this.steered.get(id)!.push(input.text)
+      return
+    }
+    s.outcome = undefined
+    s.time.idle = undefined
+    s.time.updated = Date.now()
+    const token = ++this.seqToken
+    this.runToken.set(id, token)
+    this.running.add(id)
+    void this.loop(id, false, input.text, token)
   }
   async markViewed(id: string, idle: number) {
     const s = this.sessions.get(id)
@@ -382,31 +514,42 @@ export class DemoBackend implements Backend {
   }
   async interrupt(id: string) {
     if (!this.running.delete(id)) return
+    this.runToken.delete(id)
+    this.steered.delete(id)
     const s = this.sessions.get(id)
     if (s) {
+      const now = Date.now()
       s.outcome = "interrupted"
-      s.time.updated = Date.now()
-      s.time.idle = Date.now()
+      s.time.updated = now
+      s.time.idle = now
     }
     this.emit("session.execution.interrupted", { sessionID: id })
   }
   async rename(id: string, title: string) {
     const s = this.sessions.get(id)
-    if (s) s.title = title
+    if (!s) return
+    s.title = title
     this.emit("session.renamed", { sessionID: id, title })
   }
   async setInboxDelivery(id: string, inboxID: string, delivery: Delivery) {
     const list = this.inboxes.get(id) ?? []
     const item = list.find((i) => i.id === inboxID)
-    if (item) item.delivery = delivery
+    if (!item) return
+    item.delivery = delivery
     this.emit("session.inbox.delivery.changed", { sessionID: id, inboxID, delivery })
   }
   async cancelInbox(id: string, inboxID: string) {
-    this.inboxes.set(id, (this.inboxes.get(id) ?? []).filter((i) => i.id !== inboxID))
+    const list = this.inboxes.get(id) ?? []
+    const next = list.filter((i) => i.id !== inboxID)
+    if (next.length === list.length) return
+    this.inboxes.set(id, next)
     this.emit("session.inbox.cancelled", { sessionID: id, inboxID })
   }
   async replyPermission(id: string, requestID: string, _decision: PermissionDecision) {
-    this.perms.set(id, (this.perms.get(id) ?? []).filter((p) => p.id !== requestID))
+    const list = this.perms.get(id) ?? []
+    const next = list.filter((p) => p.id !== requestID)
+    if (next.length === list.length) return
+    this.perms.set(id, next)
     this.emit("permission.replied", { sessionID: id, requestID })
   }
   async replyForm() {}
