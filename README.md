@@ -4,7 +4,7 @@
 
 Hermes Canvas is a local web application that displays every Hermes agent session on a single infinite, zoomable canvas. It reads directly from your local Hermes session store (`state.db`), streaming live output, tool calls, and status updates across all active projects — CLI, gateway, A2A, and one-shot sessions alike. You can inspect transcripts, steer running agents, queue follow-up prompts, or monitor every running session side by side in an adaptive tiled view.
 
-It is a port of [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas) to the Hermes agent store: the canvas UI (pan/zoom, layouts, tiles, transcripts) is unchanged, while the backend speaks Hermes (`state.db` + `hermes chat --resume … --format stream-json`) instead of the OpenCode v2 HTTP API.
+It adapts [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas) to the Hermes agent store: the canvas UI (pan/zoom, layouts, tiles, transcripts, and launchpad) connects to a local Bun backend speaking Hermes (`state.db` + `hermes chat --resume … --format stream-json`) instead of the OpenCode v2 HTTP API.
 
 ## Features
 
@@ -15,7 +15,7 @@ It is a port of [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas)
 - **Infinite pan and zoom**: Pan smoothly by dragging or scrolling; zoom with pinch or Command/Ctrl + scroll. Camera motion includes momentum and elastic boundaries (overshoot tops out at 14% of the screen).
 - **Project grouping**: Sessions are arranged as cards grouped by project folder (git root, then working directory), with active work sorted to the top.
 - **Dynamic layouts**: Switch between Satellites, Fold, Tabs, and Tree layouts on the fly.
-- **Global search**: Press `/`, `Command+K`, or start typing anywhere to search across titles, project names, loaded previews, and session history (SQLite FTS). Cards reflow with motion blur.
+- **Global search**: Press `/`, `Command+K` / `Ctrl+K`, or start typing anywhere on the canvas to search across titles, project names, loaded previews, and session history (SQLite FTS). Cards reflow with motion blur.
 - **Performance**: DOM-based cards inside a single GPU-composited world layer, lazy preview loading for visible cards (4 concurrent requests), and viewport culling.
 - **Session creation**: Start new sessions from the global picker (`N`) with path autocompletion and model selection, type a task in the launchpad (`L`), or use the "+ New session" card at the end of each project.
 
@@ -58,11 +58,11 @@ It is a port of [opencode-canvas](https://github.com/DevvGwardo/opencode-canvas)
 
 ![Session panel: a transcript open in place, with an inline permission prompt and the steer composer](assets/screenshot-session.png)
 
-- **In-place inspection**: Click any card or press `Enter` to open its full transcript directly in place on the map.
+- **In-place inspection**: Click any card, press `Enter`, or open `/#<session-id>` directly to inspect its full transcript in place on the map.
 - **Streaming transcripts**: Renders live text streams, reasoning, and tool operations; tool-result JSON envelopes (`{"output": …}`) display just the output.
 - **Steer and queue**: `Enter` sends immediately and steers a running agent mid-turn (previous turn is interrupted); `Tab` queues messages to execute after the current turn completes.
 - **Model switching**: Switch models dynamically; the choice is stored on the Hermes session row and used for subsequent canvas prompts.
-- **Session controls**: Stop a running agent from the header (or `Command+.`); the `...` menu copies the resume command (`hermes chat --resume <id>`) or session ID and renames the session (via `hermes sessions rename`).
+- **Session controls**: Stop a running agent from the header (or `Command+.` / `Ctrl+.` in the open panel, on the selected canvas card, or in a maximized tile); the `...` menu copies the resume command (`hermes chat --resume <id>`) or session ID and renames the session (via `hermes sessions rename`).
 
 ### Auto-approve
 Hermes prompts for approvals inside the agent turn rather than through a server queue, so the canvas maps its switches onto the `hermes chat --yolo` flag:
@@ -135,13 +135,13 @@ You can also append `?demo=1` to the URL at any time.
 | `Tab` | In session or tile, queue message for after the turn |
 | `Shift` + `Enter` | Insert newline in message input |
 | `Esc` | Step back one level, close panel/picker/tiles, or clear filter/search |
-| `/` or `Command+K` or type | Focus global search |
+| `/`, `Command+K` / `Ctrl+K`, or type | Focus global search (canvas) |
 | `N` | Open new session picker (preselects focused card's project) |
 | `L` | Focus the launchpad task box |
 | `T` | Toggle Tiles view |
 | `1` – `4` | Switch layout (`1` Satellites, `2` Fold, `3` Tabs, `4` Tree) |
 | `]` / `[` | Jump to next / previous session needing attention |
-| `Command+.` | Stop running agent |
+| `Command+.` / `Ctrl+.` | Stop running agent (open session panel, maximized tile, or selected canvas card) |
 | `?` | Toggle keyboard shortcuts overlay |
 
 ### Layouts
@@ -157,7 +157,7 @@ Working sessions across all layouts are marked with customizable dock spinner an
 
 ### Tiles view
 
-Open the tiled view with `T`, the top bar button, or by navigating to `#tiles` in your browser URL:
+Open the tiled view with `T`, the top bar button, or by navigating to `/#tiles` in your browser URL (individual sessions also support `/#<session-id>` deep links):
 
 - Displays all running sessions side by side in an auto-fitting grid.
 - Each tile displays the project name (color-coded consistently), session title, and live status.
@@ -172,17 +172,19 @@ CLI arguments supported by `hermes-canvas`:
 
 | Flag | Default | Description |
 |---|---|---|
-| `-p, --port <port>` | `4318` | Port to listen on. Pass `0` to pick a random available port. |
+| `-p, --port <port>` | `4318` (or `PORT`) | Port to listen on (falls back to the `PORT` env var). Pass `0` to pick a random available port. |
 | `--hostname <host>` | `127.0.0.1` | Network interface to bind. Binding to non-loopback addresses exposes Hermes to your network. |
 | `--home <dir>` | Hermes home | Hermes home dir containing `state.db` (or set `HERMES_HOME`). |
 | `--demo` | `false` | Run simulated sessions without touching Hermes. Also enabled by appending `?demo=1` to the URL. |
 | `--dev` | `false` | Enable hot-reloading for UI development. |
 | `--open` | `false` | Automatically open the canvas in your default browser on startup. |
+| `-h, --help` | `false` | Print usage information and exit. |
 
 Environment overrides (also honored by the test suite):
 
 | Variable | Purpose |
 |---|---|
+| `PORT` | Default listening port when `-p` / `--port` is omitted (defaults to `4318`) |
 | `HERMES_HOME` | Hermes home dir (`state.db`, `config.yaml`) |
 | `HERMES_CANVAS_DB` | `state.db` path directly |
 | `HERMES_CANVAS_VIEWED` | Viewed-markers sidecar path |
@@ -198,12 +200,23 @@ browser ──/api/hermes/*──▶ hermes-canvas (Bun) ──SQLite──▶ <
         ◀──SSE────────────                    ──spawn──▶ hermes chat --resume … --format stream-json
 ```
 
-- **Server** (`src/server/`): `hermes.ts` maps Hermes rows to canvas sessions/messages/projects, polls `state.db` (1s) for external changes (gateway/CLI sessions), and manages background `hermes chat` processes for steering, translating `stream-json` (`text`, `tool_use`, `tool_result`, `result`) into the canvas event vocabulary (`session.execution.*`, `session.text.*`, `session.tool.*`). `server.ts` serves the UI plus `/api/hermes/*` and the SSE feed. Enforces CSRF and origin security: requests with a foreign `Origin`, a cross-site `Sec-Fetch-Site`, or a non-loopback `Host` receive a 403 Forbidden response.
-- **Store** (`src/app/store.ts`, unchanged): Loads the most recent 600 sessions, active sessions, and project lists on boot; tracks real-time updates through the event feed. Card previews load lazily for visible cards (4 at a time).
-- **Canvas** (`src/app/canvas.ts`, `camera.ts`, `layouts.ts`, unchanged): Renders DOM cards inside a transformed world layer. Layouts are computed as pure functions, movements follow critically damped springs, off-screen cards are culled.
-- **Transcript** (`src/app/transcript.ts`, unchanged): Shared by the open-session panel (`panel.ts`) and every tile (`tiles.ts`). Applies streaming events directly to the transcript and reconciles with `GET /message` after each step.
+- **Server** (`src/server/`): `hermes.ts` maps Hermes rows to canvas sessions/messages/projects, polls `state.db` (1s) for external changes (gateway/CLI sessions), and manages background `hermes chat` processes for steering, translating `stream-json` (`text`, `tool_use`, `tool_result`, `result`) into the canvas event vocabulary (`session.execution.*`, `session.text.*`, `session.tool.*`). `server.ts` serves the UI plus `/canvas/config`, `/api/hermes/*`, and the SSE feed. Enforces CSRF and origin security: requests with a foreign `Origin`, a cross-site `Sec-Fetch-Site`, or a non-loopback `Host` receive a 403 Forbidden response.
+- **Store** (`src/app/store.ts`): Loads the most recent 600 sessions, active sessions, and project lists on boot; tracks real-time updates through the event feed. Card previews load lazily for visible cards (4 at a time).
+- **Canvas** (`src/app/canvas.ts`, `camera.ts`, `layouts.ts`): Renders DOM cards inside a transformed world layer. Layouts are computed as pure functions, movements follow critically damped springs, off-screen cards are culled.
+- **Transcript** (`src/app/transcript.ts`): Shared by the open-session panel (`panel.ts`) and every tile (`tiles.ts`). Applies streaming events directly to the transcript and reconciles with `GET /message` after each step.
 - **Launchpad** (`src/app/launchpad.ts`): Creates a session row and prompts it through the same server path as any other canvas prompt. Team launches only add orchestration instructions to that prompt; the actual fan-out is Hermes' native `delegate_task` tool, so the canvas keeps its single source of truth (`state.db`) and needs no separate dispatcher.
 - **Backend** (`src/app/hermes-backend.ts`): Implements the `Backend` interface (shared with the demo backend) against `/api/hermes/*`. Permission/inbox/form queues read empty (Hermes approvals happen inside the agent turn); allow-everything maps to `--yolo` on spawned prompts.
+
+### HTTP & SSE endpoints (`src/server/server.ts`)
+
+- `GET /`, `GET /canvas/config`: serves the canvas UI and active store/mode configuration
+- `GET /api/hermes/event`: Server-Sent Events stream (`server.connected`, `session.*`, keepalive pings)
+- `GET /api/hermes/project`, `GET /api/hermes/model`, `GET /api/hermes/model/default`: project directories, available models, and default model
+- `GET /api/hermes/session/active`, `GET/POST /api/hermes/session`: running session IDs, session list/search (`?limit`, `?search`), and session creation
+- `GET/PATCH /api/hermes/session/:id`, `GET /api/hermes/session/:id/message`: session details, title/yolo updates, and paginated message history
+- `POST /api/hermes/session/:id/{prompt,interrupt,view,model}`: steer or queue prompts, interrupt turns, mark viewed, and switch session model
+- `GET/POST/DELETE /api/hermes/session/:id/{permission,inbox,form}`: empty-list / no-op shims for Hermes compatibility
+- `GET /api/hermes/fs/list`, `GET/POST /api/hermes/approve`, `GET /api/hermes/yolo`: directory browsing and `--yolo` auto-approve state
 
 ### Hermes concepts used
 
@@ -229,7 +242,8 @@ For vulnerability reporting guidelines, please refer to [SECURITY.md](SECURITY.m
 ```sh
 bun run dev        # Run with hot reload
 bun run demo       # Run with simulated sessions
-bun test           # Run test suite (isolated temp Hermes home + fake hermes CLI)
+bun run build      # Bundle UI assets into dist/
+bun run test       # Run test suite (runs `bun test --isolate`; isolated temp Hermes home + fake hermes CLI)
 bun run typecheck  # Run TypeScript type checker
 ```
 

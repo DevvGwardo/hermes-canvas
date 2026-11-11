@@ -14,12 +14,13 @@ bun run dev       # against your local Hermes store, with hot reload
 
 ```sh
 bun run typecheck
-bun test
+bun run test       # runs `bun test --isolate` so globals and timers stay isolated per file
+bun run build
 ```
 
 - Keep layouts, formatting and status logic as pure functions with tests (`test/`).
 - Try UI changes in demo mode (`?demo=1`) and against a real Hermes install.
-- If you add an endpoint under `/api/hermes/*`, list it in the README's "How it works" section.
+- Endpoints live in [`src/server/server.ts`](src/server/server.ts) under `/api/hermes/*` (plus `/canvas/config`); if you add or change one, update the endpoint summary in [the README's "How it works" section](README.md#how-it-works).
 
 ## Reporting bugs
 
