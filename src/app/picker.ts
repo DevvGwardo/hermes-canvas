@@ -102,7 +102,7 @@ export class NewSessionPicker {
     this.prevFocus = typeof document !== "undefined" ? (document.activeElement ?? null) : null
     this.folderCache.clear()
     this.preferred = preferDirectory
-    this.model = defaultModel()
+    this.model = defaultModel(this.backend.kind)
     this.mode = "where"
     this.whereQuery = ""
 

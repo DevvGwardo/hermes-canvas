@@ -229,7 +229,7 @@ async function pickerFixture() {
 
 describe("picker dialog — shell", () => {
   it("open builds the dialog once; a second open just refocuses", async () => {
-    const { picker, host, scrim, input, autoBox } = await pickerFixture()
+    const { picker, scrim, input, autoBox } = await pickerFixture()
     expect(picker.isOpen).toBe(false)
     picker.open()
     await flush()

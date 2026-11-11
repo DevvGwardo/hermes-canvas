@@ -207,7 +207,7 @@ export async function boot(rootEl?: HTMLElement): Promise<BootHandle | undefined
     if (g) await createIn(g.directory)
   }
 
-  async function createIn(directory: string, model: ModelRef | undefined = defaultModel(), autoApprove = store.autoApproveAll) {
+  async function createIn(directory: string, model: ModelRef | undefined = defaultModel(backend.kind), autoApprove = store.autoApproveAll) {
     try {
       const s = await backend.createSession(directory, model, autoApprove ? [ALLOW_ALL] : undefined)
       if (destroyed) return
@@ -341,8 +341,9 @@ export async function boot(rootEl?: HTMLElement): Promise<BootHandle | undefined
   tilesBtn.innerHTML = `<span class="tiles-icon" aria-hidden="true"></span><span class="tiles-label">Tiles</span><span class="tiles-n"></span>`
   tilesBtn.title = "Every running session's chat, side by side (T)"
   tilesBtn.addEventListener("click", () => (tiles.isOpen ? tiles.close() : openTiles()))
-  right.append(autoApproveToggle(store), tilesBtn)
-  autoApprovedNotices(store)
+  const ac = new AbortController()
+  right.append(autoApproveToggle(store, { signal: ac.signal }), tilesBtn)
+  const stopNotices = autoApprovedNotices(store)
   const newBtn = el("button", "new-btn") as HTMLButtonElement
   newBtn.type = "button"
   newBtn.innerHTML = `<span class="plus">+</span><span class="new-label">New session</span>`
@@ -644,6 +645,8 @@ export async function boot(rootEl?: HTMLElement): Promise<BootHandle | undefined
 
   const destroy = () => {
     destroyed = true
+    ac.abort()
+    stopNotices()
     clearTimeout(searchTimer)
     clearInterval(statsTimer)
     unsubStore()
@@ -654,8 +657,8 @@ export async function boot(rootEl?: HTMLElement): Promise<BootHandle | undefined
     picker.close(false)
     panel.destroy()
     launchpad?.destroy()
-    ;(tiles as { destroy?: () => void }).destroy?.()
-    ;(canvas as { destroy?: () => void }).destroy?.()
+    tiles.destroy()
+    canvas.destroy()
   }
 
   try {

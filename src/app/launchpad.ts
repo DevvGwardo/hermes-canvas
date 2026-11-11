@@ -263,8 +263,8 @@ export class Launchpad {
       ? "Describe a task. Enter launches a team of Hermes subagents."
       : "Describe a task. Enter launches one Hermes session."
     this.note.textContent = this.team
-      ? `Enter launches a team · ${modelLabel(defaultModel())} · Shift+Enter for a new line`
-      : `Enter launches one session · ${modelLabel(defaultModel())} · Shift+Enter for a new line`
+      ? `Enter launches a team · ${modelLabel(defaultModel(this.backend.kind))} · Shift+Enter for a new line`
+      : `Enter launches one session · ${modelLabel(defaultModel(this.backend.kind))} · Shift+Enter for a new line`
     this.renderFeed()
   }
 
@@ -318,7 +318,7 @@ export class Launchpad {
     }
 
     const team = this.team
-    const model = defaultModel()
+    const model = defaultModel(this.backend.kind)
     const autoApprove = this.store.autoApproveAll
     this.busy = true
     this.el.setAttribute("aria-busy", "true")

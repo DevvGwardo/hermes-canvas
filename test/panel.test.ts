@@ -879,7 +879,9 @@ describe("SessionPanel", () => {
     await flush()
     expect(prompts).toEqual([{ id: "s1", text: "stay in draft", delivery: "queue", files: [{ name: "snap.png", uri: "data:image/png;base64,AAAA" }] }] as any)
 
-    // Live backend image-only send aborts cleanly without dropping the attachment
+    // Live backend image-only send aborts cleanly without dropping the attachment;
+    // also ignores leaked demo/demo-model pinned default in localStorage (I2).
+    installStorage("demo/demo-model")
     let livePrompts = 0
     const liveBackend = {
       kind: "live",
@@ -889,6 +891,8 @@ describe("SessionPanel", () => {
       messages: async () => ({ data: [] }),
       inbox: async () => [],
       markViewed: async () => {},
+      listModels: async () => [{ id: "demo-model", providerID: "demo", name: "Demo Model" }],
+      serverDefaultModel: async () => undefined,
       prompt: async () => {
         livePrompts++
       },
@@ -899,6 +903,12 @@ describe("SessionPanel", () => {
     const livePanel = new SessionPanel(liveHost as any, liveStore, liveBackend, { setOpen() {}, cardRect: () => null } as any, () => {})
     livePanel.open("s1")
     await flush()
+    const liveRoot = livePanel.el as unknown as FakeEl
+    find(liveRoot, (e) => e.className.split(/\s+/).includes("model"))!.fire("click", { stopPropagation: () => {} })
+    await flush()
+    const livePop = find(liveRoot, (e) => e.className.includes("popover"))!
+    expect(textOf(livePop)).not.toContain("default for new sessions")
+    livePanel.handleEscape()
     const liveInput = livePanel["input"] as unknown as FakeEl
     const liveAttach = livePanel["attachRow"] as unknown as FakeEl
     liveInput.fire("paste", {

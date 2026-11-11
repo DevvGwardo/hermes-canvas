@@ -210,8 +210,10 @@ class FakeElement {
     delete this.attrs[k]
   }
 
-  addEventListener(type: string, fn: (e: any) => void) {
+  addEventListener(type: string, fn: (e: any) => void, opts?: { signal?: AbortSignal }) {
+    if (opts?.signal?.aborted) return
     ;(this.handlers[type] ??= []).push(fn)
+    opts?.signal?.addEventListener("abort", () => this.removeEventListener(type, fn), { once: true })
   }
 
   removeEventListener(type: string, fn?: (e: any) => void) {
@@ -601,6 +603,10 @@ describe("main — boot lifecycle, routing, and keyboard handling", () => {
 
     app.destroy()
     expect(winHandlers["keydown"] ?? []).toHaveLength(0)
+    expect(app.store.onAutoApproved).toBeUndefined()
+    const aaBtn = root.querySelector(".topbar .aa-toggle")!
+    aaBtn.click()
+    expect(aaBtn.classList.contains("confirming")).toBe(false)
   })
 
   it("handles Cmd/Ctrl+. global interrupt on running tile/panel", async () => {

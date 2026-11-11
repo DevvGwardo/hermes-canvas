@@ -499,7 +499,7 @@ export class SessionPanel {
     }
     if (this.popover !== pop) return
     const current = s.model ? `${s.model.providerID}/${s.model.id}` : ""
-    const pinned = defaultModel()
+    const pinned = defaultModel(this.backend.kind)
     let activeIdx = 0
     const highlight = (items: HTMLButtonElement[]) => {
       activeIdx = Math.max(0, Math.min(activeIdx, items.length - 1))
@@ -526,7 +526,7 @@ export class SessionPanel {
             this.closePopover()
             const ref = { id: m.id, providerID: m.providerID }
             const prevModel = s.model
-            const prevDefault = defaultModel()
+            const prevDefault = defaultModel(this.backend.kind)
             setDefaultModel(ref)
             s.model = ref
             this.renderHeader()
