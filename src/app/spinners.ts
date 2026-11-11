@@ -17,20 +17,42 @@ export function reducedMotion(): boolean {
 }
 
 const ACCENT = [70, 211, 126] as const
-const rgba = (a: number) => `rgba(${ACCENT[0]},${ACCENT[1]},${ACCENT[2]},${Math.max(0, Math.min(1, a)).toFixed(3)})`
+type Rgb = readonly [number, number, number]
+let paintColor: Rgb = ACCENT
+const rgba = (a: number) => `rgba(${paintColor[0]},${paintColor[1]},${paintColor[2]},${Math.max(0, Math.min(1, a)).toFixed(3)})`
+
+function parseRgb(c: HTMLCanvasElement): Rgb {
+  if (!c.isConnected || !c.classList?.contains("seg-spin") || typeof getComputedStyle !== "function") return ACCENT
+  try {
+    const m = getComputedStyle(c).color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i)
+    if (!m) return ACCENT
+    return [Number(m[1]), Number(m[2]), Number(m[3])]
+  } catch {
+    return ACCENT
+  }
+}
 
 let style: SpinnerStyle = "comet"
 const live = new Set<HTMLCanvasElement>()
+const resting = new Set<HTMLCanvasElement>()
 let running = false
 
 export function setSpinnerStyle(s: SpinnerStyle) {
   style = s
+  for (const c of resting) {
+    if (!c.isConnected) {
+      resting.delete(c)
+      continue
+    }
+    if (!c.dataset.style) paint(c, s, 0)
+  }
 }
 
 /** A spinner canvas; `fixed` pins it to one style (the dock's previews). */
 export function spinner(size = 14, extraClass = "", fixed?: SpinnerStyle): HTMLCanvasElement {
   const c = document.createElement("canvas")
-  const dpr = Math.min(3, window.devicePixelRatio || 1)
+  const rawDpr = typeof window !== "undefined" ? window.devicePixelRatio : 1
+  const dpr = Math.min(3, rawDpr || 1)
   c.width = Math.round(size * dpr * 1.5) // headroom for zoomed-in canvases
   c.height = Math.round(size * dpr * 1.5)
   c.style.width = c.style.height = `${size}px`
@@ -41,6 +63,7 @@ export function spinner(size = 14, extraClass = "", fixed?: SpinnerStyle): HTMLC
   // continuously redrawing canvas can't be switched off from CSS.
   if (reducedMotion()) {
     paint(c, fixed ?? style, 0)
+    if (!fixed) resting.add(c)
     return c
   }
   live.add(c)
@@ -150,17 +173,26 @@ function paint(c: HTMLCanvasElement, s: SpinnerStyle, t: number) {
   const size = c.width
   g.setTransform(1, 0, 0, 1, 0, 0)
   g.clearRect(0, 0, size, size)
-  draw[s](g, t, size)
+  paintColor = parseRgb(c)
+  try {
+    draw[s](g, t, size)
+  } finally {
+    paintColor = ACCENT
+  }
 }
 
 /** Every visible spinner on one frame; disconnected canvases get pruned. */
 function paintLive(t: number) {
+  if (typeof document !== "undefined" && document.hidden) {
+    for (const c of live) if (!c.isConnected) live.delete(c)
+    return
+  }
   for (const c of live) {
     if (!c.isConnected) {
       live.delete(c)
       continue
     }
-    if (!c.offsetParent || c.closest(".culled")) continue
+    if (!c.offsetParent || c.closest(".culled, .stacked, .is-open")) continue
     paint(c, (c.dataset.style as SpinnerStyle | undefined) ?? style, t)
   }
 }

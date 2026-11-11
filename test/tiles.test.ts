@@ -774,4 +774,96 @@ describe("Tile — chrome and composer", () => {
     expect(view.maximized).toBe("s1") // click landed on a button: no double-toggle
     view.toggleMax("s1")
   })
+
+  it("accounts for .tiles-grid padding in layout height/scrolls and guards gridFor on <= 0", async () => {
+    expect(gridFor(3, 0, 0).rowH).toBeGreaterThanOrEqual(300)
+    expect(Number.isFinite(gridFor(3, -100, -50).rowH)).toBe(true)
+
+    const { view, grid } = await viewFixture()
+    view.open()
+    await flush()
+    // 4 tiles in FakeEl 1200x800 grid -> subtracts default 20px padding (780h -> 2 rows of 385px, not 395px)
+    expect(grid.style.gridAutoRows).toBe("385px")
+    expect(grid.classList.contains("scrolls")).toBe(false)
+
+    // Pin 3 extra sessions -> 7 tiles -> 3 cols x 3 rows * 300 + 20 > 780 content height -> .scrolls turns on
+    view.toggleMax("s1")
+    expect(grid.style.gridAutoRows).toBe("780px") // 800 - 20 padding fits cleanly without bottom clipping
+  })
+
+  it("Tab queues only when active/needs-you, failed send keeps newer input & autosizes, counts use review window, destroy cleans up", async () => {
+    const sDone = mk("s7", { updated: NOW - 10_000_000, idle: NOW - 10_000_000, viewed: NOW - 1_000 })
+    const sOldFailed = mk("s8", { updated: NOW - 300_000_000, idle: NOW - 300_000_000, viewed: NOW - 1_000 }, { outcome: "failed" })
+    const sessions = [...baseSessions(), sDone, sOldFailed]
+    const b = tilesBackend(sessions)
+    const store = new Store(b.backend)
+    await store.reload()
+    store.permissions.set("s2", [permReq("s2")])
+    b.backend.active = async () => new Set(["s1"])
+    await store["syncActive"]()
+
+    const host = new FakeEl("div")
+    let closed = 0
+    const view = new TilesView(host as any, store, b.backend, {
+      openOnCanvas: () => {},
+      newSession: () => {},
+      closed: () => closed++,
+    })
+    view.pin("s7")
+    view.pin("s8")
+    view.open()
+    await flush()
+
+    const tiles = view["tiles"] as unknown as Map<string, any>
+    const counts = find(view.el as unknown as FakeEl, (e) => e.className.includes("tiles-counts"))!
+    // Old viewed failed tile (s8) should NOT count as "to review"
+    expect(counts.innerHTML).not.toContain("to review")
+
+    // Idle done tile (s7): Tab does NOT send/queue
+    const doneInput = inputOf(tiles, "s7")
+    doneInput.value = "focus navigation"
+    doneInput.fire("keydown", { key: "Tab", shiftKey: false })
+    await flush()
+    expect(b.prompts.length).toBe(0)
+
+    // toggleMax ignores unknown id
+    view.toggleMax("missing")
+    expect(view.maximized).toBeUndefined()
+
+    // Failed send preserves newly typed text and restores + autosizes when empty
+    b.setFailPrompt(true)
+    const runInput = inputOf(tiles, "s1")
+    let resolveFail!: () => void
+    const slowFail = new Promise<void>((r) => (resolveFail = r))
+    ;(b.backend as any).prompt = async () => {
+      await slowFail
+      throw new Error("boom")
+    }
+    runInput.value = "first"
+    runInput.fire("keydown", { key: "Enter", shiftKey: false })
+    runInput.value = "newer typed text"
+    resolveFail()
+    await flush()
+    expect(runInput.value).toBe("newer typed text")
+
+    // Empty input on fail restores & autosizes
+    runInput.value = ""
+    ;(b.backend as any).prompt = async () => {
+      throw new Error("boom2")
+    }
+    runInput.scrollHeight = 84
+    runInput.value = "multi\nline"
+    runInput.fire("keydown", { key: "Enter", shiftKey: false })
+    await flush()
+    expect(runInput.value).toBe("multi\nline")
+    expect(runInput.style.height).toBe("84px")
+
+    // destroy() closes cleanly, unsubscribes both open tile transcripts and TilesView from store, and removes root element
+    expect(store["listeners"].size).toBeGreaterThan(1)
+    view.destroy()
+    expect(view.isOpen).toBe(false)
+    expect(closed).toBe(1)
+    expect(store["listeners"].size).toBe(0)
+    expect(host.children.length).toBe(0)
+  })
 })

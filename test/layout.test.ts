@@ -96,4 +96,67 @@ describe("layouts", () => {
     expect(miss.x).toBe(0)
     expect(miss.y).toBe(0)
   })
+
+  test("empty groups in fold and tabs do not throw or return negative widths", () => {
+    const emptyGroup: LayoutGroup[] = [{ key: "empty", label: "empty", items: [] }]
+    for (const name of LAYOUTS) {
+      const r = layout(name, emptyGroup, {})
+      const box = r.groups.get("empty")
+      if (box) {
+        expect(box.w).toBeGreaterThan(0)
+        expect(box.h).toBeGreaterThan(0)
+      }
+      expect(Number.isFinite(r.bounds.w) && r.bounds.w > 0).toBe(true)
+      expect(Number.isFinite(r.bounds.h) && r.bounds.h > 0).toBe(true)
+    }
+  })
+
+  test("searchGrid height excludes trailing GAP on hits", () => {
+    const single: LayoutGroup[] = [
+      { key: "g0", label: "p0", items: [{ id: "s1", kind: "session", h: 180, updated: 100 }] },
+    ]
+    const r = layout("tree", single, { query: () => true })
+    expect(r.groups.get("__search")!.h).toBe(34 + 180) // LABEL_H + card.h, no trailing GAP
+  })
+
+  test("satellites: tall cards in dense rings do not overlap vertically", () => {
+    const tall: LayoutGroup[] = [
+      {
+        key: "tall",
+        label: "tall-project",
+        items: [
+          ...Array.from({ length: 14 }, (_, i) => ({ id: `t${i}`, kind: "session" as const, h: 360, updated: 100 - i })),
+          { id: "new:tall", kind: "new" as const, h: 104, updated: 0 },
+        ],
+      },
+    ]
+    const r = layout("satellites", tall, {})
+    const shown = [...r.cards.values()].filter((p) => p.opacity > 0)
+    const scaledOverlaps = (a: Placement, b: Placement) => {
+      const acx = a.x + CARD_W / 2
+      const acy = a.y + a.h / 2
+      const bcx = b.x + CARD_W / 2
+      const bcy = b.y + b.h / 2
+      const aw = a.w * a.scale
+      const ah = a.h * a.scale
+      const bw = b.w * b.scale
+      const bh = b.h * b.scale
+      return Math.abs(acx - bcx) * 2 < aw + bw && Math.abs(acy - bcy) * 2 < ah + bh
+    }
+    for (let i = 0; i < shown.length; i++)
+      for (let j = i + 1; j < shown.length; j++) expect(scaledOverlaps(shown[i], shown[j])).toBe(false)
+
+    // Multi-ring mixed heights (30 satellites) also separate across rings cleanly
+    const mixed30: LayoutGroup[] = [
+      {
+        key: "m30",
+        label: "mixed",
+        items: Array.from({ length: 30 }, (_, i) => ({ id: `m${i}`, kind: "session" as const, h: 150 + ((i * 89) % 260), updated: 1000 - i })),
+      },
+    ]
+    const rm = layout("satellites", mixed30, {})
+    const shown30 = [...rm.cards.values()].filter((p) => p.opacity > 0)
+    for (let i = 0; i < shown30.length; i++)
+      for (let j = i + 1; j < shown30.length; j++) expect(scaledOverlaps(shown30[i], shown30[j])).toBe(false)
+  })
 })

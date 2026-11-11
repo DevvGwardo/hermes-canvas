@@ -40,6 +40,7 @@ interface CardView {
   settled: boolean
   culled: boolean
   blur: number
+  fresh?: boolean
 }
 
 export interface CanvasHandlers {
@@ -86,19 +87,28 @@ export class CanvasView {
   private labelsLayer: HTMLElement
   private cards = new Map<string, CardView>()
   private labels = new Map<string, HTMLElement>()
+  private labelTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private result?: LayoutResult
   private layoutName: LayoutName = "tree"
   private query = ""
   private expanded?: string
   private needsLayout = true
   private firstLayout = true
+  private fitAfterLayout = false
   private heightsDirty = new Set<string>()
   private frameScheduled = false
+  private rafId = 0
   private lastFrame = performance.now()
   private cameraDirty = true
   private lastPreviewScan = 0
   private openId?: string
   private accentH = 0
+  private ac = new AbortController()
+  private inputUnsubs: Array<() => void> = []
+  private unsubStore: () => void
+  private ro: ResizeObserver
+  private tickTimer: ReturnType<typeof setInterval>
+  private destroyed = false
   selected?: string
 
   constructor(
@@ -117,22 +127,45 @@ export class CanvasView {
     host.append(this.stage)
 
     this.camera = new Camera(() => this.kick())
-    const ro = new ResizeObserver(() => {
-      this.camera.setViewport(this.stage.clientWidth, this.stage.clientHeight)
+    this.ro = new ResizeObserver(() => {
+      const w = this.stage.clientWidth
+      const h = this.stage.clientHeight
+      if (w <= 0 || h <= 0) return
+      this.camera.setViewport(w, h)
       this.cameraDirty = true
       this.needsLayout = true
       this.kick()
     })
-    ro.observe(this.stage)
-    this.camera.setViewport(this.stage.clientWidth || innerWidth, this.stage.clientHeight || innerHeight)
+    this.ro.observe(this.stage)
+    const fallbackW = typeof innerWidth === "number" ? innerWidth : 1200
+    const fallbackH = typeof innerHeight === "number" ? innerHeight : 800
+    this.camera.setViewport(this.stage.clientWidth || fallbackW, this.stage.clientHeight || fallbackH)
 
     this.bindInput()
 
-    store.on({
+    this.unsubStore = store.on({
       structure: () => this.sync(),
       cards: (ids) => this.updateCards(ids),
     })
-    setInterval(() => this.updateCards(new Set(this.cards.keys())), 30_000)
+    this.tickTimer = setInterval(() => this.updateCards(new Set(this.cards.keys())), 30_000)
+  }
+
+  destroy() {
+    if (this.destroyed) return
+    this.destroyed = true
+    this.ac.abort()
+    for (const off of this.inputUnsubs) off()
+    this.inputUnsubs = []
+    this.unsubStore()
+    this.ro.disconnect()
+    clearInterval(this.tickTimer)
+    if (this.rafId && typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.rafId)
+    this.rafId = 0
+    this.frameScheduled = false
+    for (const t of this.labelTimers.values()) clearTimeout(t)
+    this.labelTimers.clear()
+    this.camera.release(0, 0)
+    this.stage.remove()
   }
 
   // ---- public ---------------------------------------------------------------
@@ -155,6 +188,10 @@ export class CanvasView {
     return this.statusFilter
   }
 
+  private get isFiltered() {
+    return !!(this.query || this.statusFilter)
+  }
+
   setStatusFilter(f: Status | undefined) {
     if (f === this.statusFilter) return
     this.statusFilter = f
@@ -170,14 +207,14 @@ export class CanvasView {
     const was = !!this.query
     this.query = next
     this.remoteHits = new Set()
+    const seq = ++this.remoteSeq
     this.relayout(!was || !next)
     if (!next) return
     // The server also searches content we haven't loaded into previews yet.
-    const seq = ++this.remoteSeq
     this.store.backend
       .searchSessions(next)
       .then((found) => {
-        if (seq !== this.remoteSeq || !found.length) return
+        if (this.destroyed || seq !== this.remoteSeq || this.query !== next || !found.length) return
         this.remoteHits = new Set(found.map((s) => s.id))
         // Older sessions outside the initial page join the canvas on demand.
         const missing = found.filter((s) => !this.store.sessions.has(s.id) && !s.time.archived)
@@ -188,14 +225,15 @@ export class CanvasView {
   }
 
   get stackOpen() {
-    return !!this.expanded
+    return !!this.expanded && !this.isFiltered
   }
 
   closeStack() {
-    if (!this.expanded) return false
+    if (!this.expanded || this.isFiltered) return false
     const g = this.expanded
     this.expanded = undefined
     this.relayout(false)
+    this.ensureLayout()
     const r = this.result?.groups.get(g)
     if (r) this.camera.fit(r, 120, Math.min(1, this.camera.z))
     return true
@@ -210,6 +248,7 @@ export class CanvasView {
 
   /** Screen rect of a card as currently displayed. */
   cardRect(id: string): DOMRect | undefined {
+    this.ensureLayout()
     const c = this.cards.get(id)
     if (!c) return undefined
     const t = c.sp
@@ -225,6 +264,7 @@ export class CanvasView {
 
   /** Bring a card to the middle of the screen at a readable zoom. */
   centerOn(id: string, zoom?: number) {
+    this.ensureLayout()
     const c = this.cards.get(id)
     const t = c?.target
     if (!c || !t) return
@@ -232,6 +272,7 @@ export class CanvasView {
   }
 
   fitAll() {
+    this.ensureLayout()
     if (!this.result) return
     this.camera.fit(this.result.bounds, 72, 1)
   }
@@ -248,9 +289,18 @@ export class CanvasView {
 
   private groupsCache: ReturnType<Store["groups"]> = []
 
+  private ensureLayout() {
+    if (this.needsLayout && this.cards.size) {
+      this.measure()
+      this.doLayout()
+    }
+  }
+
   private sync() {
+    if (this.destroyed) return
     const groups = this.store.groups()
     this.groupsCache = groups
+    if (this.expanded && !groups.some((g) => g.key === this.expanded)) this.expanded = undefined
     const seen = new Set<string>()
     let added = 0
     for (const g of groups) {
@@ -274,12 +324,19 @@ export class CanvasView {
         c.h = NEW_CARD_H
       }
     }
+    let deselected = false
     for (const [id, c] of this.cards) {
       if (seen.has(id)) continue
       c.root.remove()
       this.cards.delete(id)
-      if (this.selected === id) this.selected = undefined
+      this.heightsDirty.delete(id)
+      if (this.openId === id) this.openId = undefined
+      if (this.selected === id) {
+        this.selected = undefined
+        deselected = true
+      }
     }
+    if (deselected) this.handlers.selectionChanged?.(undefined)
     this.updateCards(new Set(this.cards.keys()))
     this.relayout(added > 0 && !!this.query)
   }
@@ -296,25 +353,33 @@ export class CanvasView {
       settled: false,
       culled: false,
       blur: 0,
+      fresh: true,
     }
-    ;(c as any).fresh = true
     this.world.append(root)
     this.cards.set(id, c)
     return c
   }
 
   private updateCards(ids: Set<string>) {
+    if (this.destroyed) return
     const now = Date.now()
+    const touchedGroups = new Set<string>()
     for (const id of ids) {
       const c = this.cards.get(id)
       if (!c?.els) continue
       const before = c.root.dataset.status
-      updateSessionCard(c.els, this.store, id, now)
-      this.heightsDirty.add(id)
+      if (updateSessionCard(c.els, this.store, id, now)) this.heightsDirty.add(id)
+      touchedGroups.add(c.group)
       // A status change reorders its project (and the filtered grid).
       if (before !== undefined && before !== c.root.dataset.status) {
         this.groupsCache = this.store.groups()
         this.needsLayout = true
+      }
+    }
+    if (!this.needsLayout) {
+      for (const gKey of touchedGroups) {
+        const marks = this.labels.get(gKey)?.querySelector(".marks")
+        if (marks) this.renderLabelMarks(marks, gKey)
       }
     }
     this.kick()
@@ -340,7 +405,7 @@ export class CanvasView {
 
   private relayout(fitCamera: boolean) {
     this.needsLayout = true
-    ;(this as any).fitAfterLayout = fitCamera || (this as any).fitAfterLayout
+    this.fitAfterLayout = fitCamera || this.fitAfterLayout
     this.kick()
   }
 
@@ -393,8 +458,8 @@ export class CanvasView {
         if (!stacked) this.heightsDirty.add(id)
       }
       if (stacked) c.root.style.setProperty("--stack-h", `${Math.round(t.h)}px`)
-      if ((c as any).fresh || this.firstLayout) {
-        ;(c as any).fresh = false
+      if (c.fresh || this.firstLayout) {
+        c.fresh = false
         c.sp.x = t.x
         c.sp.y = t.y
         c.sp.r = t.rot
@@ -408,17 +473,23 @@ export class CanvasView {
       }
       c.settled = false
     }
+    if (this.selected) {
+      const sc = this.cards.get(this.selected)
+      if (sc?.target && this.isFiltered && !sc.target.interactive) {
+        this.select(undefined, false)
+      }
+    }
     this.renderLabels()
     this.camera.setBounds(this.result.bounds)
 
     if (this.firstLayout && this.groupsCache.length) {
       this.firstLayout = false
       this.initialCamera()
-    } else if ((this as any).fitAfterLayout) {
-      const b = this.query ? (this.result.groups.get("__search") ?? this.result.bounds) : this.result.bounds
+    } else if (this.fitAfterLayout) {
+      const b = this.isFiltered ? (this.result.groups.get("__search") ?? this.result.bounds) : this.result.bounds
       this.camera.fit(b, 72, 1)
     }
-    ;(this as any).fitAfterLayout = false
+    this.fitAfterLayout = false
     this.cameraDirty = true
   }
 
@@ -436,6 +507,11 @@ export class CanvasView {
     const seen = new Set<string>()
     for (const l of this.result!.labels) {
       seen.add(l.key)
+      const pending = this.labelTimers.get(l.key)
+      if (pending !== undefined) {
+        clearTimeout(pending)
+        this.labelTimers.delete(l.key)
+      }
       let e = this.labels.get(l.key)
       if (!e) {
         e = document.createElement("div")
@@ -457,13 +533,16 @@ export class CanvasView {
     }
     for (const [k, e] of this.labels) {
       if (seen.has(k)) continue
+      if (e.classList.contains("gone") && this.labelTimers.has(k)) continue
       e.classList.add("gone")
-      setTimeout(() => {
-        if (e.classList.contains("gone")) {
+      const timer = setTimeout(() => {
+        this.labelTimers.delete(k)
+        if (!this.destroyed && this.labels.get(k) === e && e.classList.contains("gone")) {
           e.remove()
           this.labels.delete(k)
         }
       }, 400)
+      this.labelTimers.set(k, timer)
     }
   }
 
@@ -499,12 +578,16 @@ export class CanvasView {
   // ---- frame loop -----------------------------------------------------------
 
   kick() {
-    if (this.frameScheduled) return
+    if (this.destroyed || this.frameScheduled) return
     this.frameScheduled = true
-    requestAnimationFrame((t) => this.frame(t))
+    this.rafId = requestAnimationFrame((t) => {
+      this.rafId = 0
+      this.frame(t)
+    })
   }
 
   private frame(now: number) {
+    if (this.destroyed) return
     this.frameScheduled = false
     const dt = Math.min(1 / 30, Math.max(0.001, (now - this.lastFrame) / 1000))
     this.lastFrame = now
@@ -581,14 +664,27 @@ export class CanvasView {
 
   private bindInput() {
     const stage = this.stage
-    stage.addEventListener(
+    const listen = <K extends string>(
+      target: { addEventListener: Function; removeEventListener?: Function },
+      type: K,
+      fn: (e: any) => void,
+      opts?: AddEventListenerOptions,
+    ) => {
+      target.addEventListener(type, fn, { ...opts, signal: this.ac.signal })
+      this.inputUnsubs.push(() => target.removeEventListener?.(type, fn, opts))
+    }
+
+    listen(
+      stage,
       "wheel",
-      (e) => {
+      (e: WheelEvent) => {
         e.preventDefault()
-        const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1
+        const pageH = typeof innerHeight === "number" ? innerHeight : 800
+        const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? pageH : 1
         const r = stage.getBoundingClientRect()
         if (e.ctrlKey || e.metaKey) {
-          this.camera.zoomAt(Math.exp(-e.deltaY * k * 0.0105), e.clientX - r.left, e.clientY - r.top)
+          const exp = Math.max(-4, Math.min(4, -e.deltaY * k * 0.0105))
+          this.camera.zoomAt(Math.exp(exp), e.clientX - r.left, e.clientY - r.top)
         } else {
           this.camera.panBy(e.deltaX * k, e.deltaY * k)
         }
@@ -598,33 +694,56 @@ export class CanvasView {
 
     // Safari trackpad pinch.
     let gestureScale = 1
-    stage.addEventListener("gesturestart", (e: any) => {
+    listen(stage, "gesturestart", (e: any) => {
       e.preventDefault()
       gestureScale = 1
+      this.camera.hold()
     })
-    stage.addEventListener("gesturechange", (e: any) => {
+    listen(stage, "gesturechange", (e: any) => {
       e.preventDefault()
+      if (!Number.isFinite(e.scale) || e.scale <= 0 || gestureScale <= 0) return
       const r = stage.getBoundingClientRect()
       this.camera.zoomAt(e.scale / gestureScale, e.clientX - r.left, e.clientY - r.top)
       gestureScale = e.scale
     })
+    const endGesture = (e?: any) => {
+      e?.preventDefault?.()
+      gestureScale = 1
+      this.camera.release(0, 0)
+    }
+    listen(stage, "gestureend", endGesture)
+    listen(stage, "gesturecancel", endGesture)
 
     const pointers = new Map<number, { x: number; y: number }>()
     let drag:
       | { id: number; x0: number; y0: number; x: number; y: number; panning: boolean; samples: Array<{ x: number; y: number; t: number }> }
       | undefined
-    let pinch: { d: number; mx: number; my: number } | undefined
+    let pinch: { ids: [number, number]; d: number; mx: number; my: number } | undefined
 
-    stage.addEventListener("pointerdown", (e) => {
+    const stopDrag = (releaseCamera: boolean, vx = 0, vy = 0) => {
+      drag = undefined
+      stage.classList.remove("grabbing")
+      if (releaseCamera) this.camera.release(vx, vy)
+    }
+
+    const resetAllInput = () => {
+      const wasHolding = !!pinch || !!drag?.panning
+      pointers.clear()
+      pinch = undefined
+      stopDrag(wasHolding, 0, 0)
+    }
+
+    listen(stage, "pointerdown", (e: PointerEvent) => {
       if (e.button !== 0 && e.pointerType === "mouse") return
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-      if (pointers.size === 2) {
-        const [a, b] = [...pointers.values()]
-        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }
-        drag = undefined
+      if (pointers.size === 2 && !pinch) {
+        const [[idA, a], [idB, b]] = [...pointers.entries()]
+        pinch = { ids: [idA, idB], d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }
+        stopDrag(false)
         this.camera.hold()
         return
       }
+      if (pinch || pointers.size > 2) return
       drag = {
         id: e.pointerId,
         x0: e.clientX,
@@ -636,24 +755,36 @@ export class CanvasView {
       }
     })
 
-    stage.addEventListener("pointermove", (e) => {
+    listen(stage, "pointermove", (e: PointerEvent) => {
       if (!pointers.has(e.pointerId)) return
+      if (e.pointerType === "mouse" && e.buttons === 0) {
+        resetAllInput()
+        return
+      }
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-      if (pinch && pointers.size >= 2) {
-        const [a, b] = [...pointers.values()]
+      if (pinch) {
+        const a = pointers.get(pinch.ids[0])
+        const b = pointers.get(pinch.ids[1])
+        if (!a || !b) return
         const d = Math.hypot(a.x - b.x, a.y - b.y)
         const mx = (a.x + b.x) / 2
         const my = (a.y + b.y) / 2
         const r = stage.getBoundingClientRect()
         this.camera.panBy(pinch.mx - mx, pinch.my - my)
-        this.camera.zoomAt(d / pinch.d, mx - r.left, my - r.top)
-        pinch = { d, mx, my }
+        if (d > 1 && pinch.d > 1) {
+          this.camera.zoomAt(d / pinch.d, mx - r.left, my - r.top)
+        }
+        pinch = { ids: pinch.ids, d: d > 1 ? d : pinch.d, mx, my }
         return
       }
       if (!drag || drag.id !== e.pointerId) return
       if (!drag.panning && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 5) {
         drag.panning = true
-        stage.setPointerCapture(e.pointerId)
+        try {
+          stage.setPointerCapture?.(e.pointerId)
+        } catch {
+          /* synthetic events */
+        }
         stage.classList.add("grabbing")
         this.camera.hold()
       }
@@ -669,15 +800,21 @@ export class CanvasView {
     })
 
     const end = (e: PointerEvent) => {
-      pointers.delete(e.pointerId)
+      const hadPointer = pointers.delete(e.pointerId)
       if (pinch) {
-        if (pointers.size < 2) {
-          pinch = undefined
-          this.camera.release(0, 0)
+        if (pinch.ids[0] === e.pointerId || pinch.ids[1] === e.pointerId || pointers.size < 2) {
+          if (pointers.size >= 2) {
+            const [[idA, a], [idB, b]] = [...pointers.entries()]
+            pinch = { ids: [idA, idB], d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }
+          } else {
+            pinch = undefined
+            stage.classList.remove("grabbing")
+            this.camera.release(0, 0)
+          }
         }
         return
       }
-      if (!drag || drag.id !== e.pointerId) return
+      if (!hadPointer || !drag || drag.id !== e.pointerId) return
       const d = drag
       drag = undefined
       stage.classList.remove("grabbing")
@@ -685,23 +822,31 @@ export class CanvasView {
         const a = d.samples[0]
         const b = d.samples[d.samples.length - 1]
         const dt = Math.max(16, b.t - a.t) / 1000
-        const stale = performance.now() - b.t > 80
+        const stale = e.type !== "pointerup" || performance.now() - b.t > 80
         this.camera.release(stale ? 0 : (a.x - b.x) / dt, stale ? 0 : (a.y - b.y) / dt)
         return
       }
-      if (e.type === "pointercancel") return
-      const target = (e.target as HTMLElement).closest<HTMLElement>(".card")
+      if (e.type !== "pointerup") return
+      const t = e.target as Element | null
+      const el = typeof Element !== "undefined" ? (t instanceof Element ? t : null) : t && typeof t.closest === "function" ? t : null
+      const target = el?.closest<HTMLElement>(".card")
       if (target && !target.classList.contains("inert")) this.activate(target.dataset.id!)
       else {
-        const lbl = (e.target as HTMLElement).closest<HTMLElement>(".group-label")
-        if (lbl?.dataset.group && this.layoutName === "fold" && !this.query) this.openStack(lbl.dataset.group)
+        const lbl = el?.closest<HTMLElement>(".group-label")
+        if (lbl?.dataset.group && this.layoutName === "fold" && !this.isFiltered) this.openStack(lbl.dataset.group)
       }
     }
-    stage.addEventListener("pointerup", end)
-    stage.addEventListener("pointercancel", end)
+    listen(stage, "pointerup", end)
+    listen(stage, "pointercancel", end)
+    listen(stage, "lostpointercapture", end)
+    if (typeof window !== "undefined" && typeof (window as any).addEventListener === "function") {
+      listen(window, "blur", resetAllInput)
+    }
 
-    stage.addEventListener("dblclick", (e) => {
-      if ((e.target as HTMLElement).closest(".card")) return
+    listen(stage, "dblclick", (e: MouseEvent) => {
+      const t = e.target as Element | null
+      const el = typeof Element !== "undefined" ? (t instanceof Element ? t : null) : t && typeof t.closest === "function" ? t : null
+      if (el?.closest(".card, .group-label")) return
       this.fitAll()
     })
   }
@@ -709,13 +854,16 @@ export class CanvasView {
   activate(id: string) {
     const c = this.cards.get(id)
     if (!c) return
+    if (c.target && !c.target.stacked && c.target.opacity <= 0.01) return
+    if (this.isFiltered && c.target && !c.target.interactive) return
     this.select(id, false)
     if (c.kind === "new") return this.handlers.newSession(c.group)
-    if (this.layoutName === "fold" && !this.query && this.expanded !== c.group) return this.openStack(c.group)
+    if (this.layoutName === "fold" && !this.isFiltered && this.expanded !== c.group) return this.openStack(c.group)
     this.handlers.open(id)
   }
 
   openStack(group: string) {
+    if (this.isFiltered || !this.groupsCache.some((g) => g.key === group)) return
     this.expanded = group
     this.needsLayout = true
     this.doLayout()
@@ -741,6 +889,7 @@ export class CanvasView {
   }
 
   moveSelection(dx: number, dy: number) {
+    this.ensureLayout()
     const candidates = [...this.cards.values()].filter((c) => c.target?.interactive && (c.target?.opacity ?? 0) > 0.5)
     if (!candidates.length) return
     const center = (c: CardView) => ({ x: c.target!.x + CARD_W / 2, y: c.target!.y + c.h / 2 })

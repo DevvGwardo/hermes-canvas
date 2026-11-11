@@ -133,6 +133,7 @@ export class Camera {
 
   /** Pan by a screen-space delta (trackpad scroll or drag). */
   panBy(dxScreen: number, dyScreen: number) {
+    if (!Number.isFinite(dxScreen) || !Number.isFinite(dyScreen)) return
     this.touch()
     // Raw position moves 1:1; the displayed position is the rubber-banded view
     // of it, so past an edge each step shows less of the input.
@@ -143,6 +144,7 @@ export class Camera {
   }
 
   zoomAt(factor: number, sx: number, sy: number) {
+    if (!Number.isFinite(factor) || factor <= 0 || !Number.isFinite(sx) || !Number.isFinite(sy)) return
     this.touch()
     const anchor = this.toWorld(sx, sy)
     this.rlz += Math.log(factor)
@@ -163,20 +165,26 @@ export class Camera {
 
   release(vxScreen: number, vyScreen: number) {
     this.holding = false
-    this.vx = vxScreen / this.z
-    this.vy = vyScreen / this.z
+    this.vx = Number.isFinite(vxScreen) ? vxScreen / this.z : 0
+    this.vy = Number.isFinite(vyScreen) ? vyScreen / this.z : 0
     this.lastInput = performance.now()
   }
 
   // ---- programmatic -------------------------------------------------------
 
   animateTo(cx: number, cy: number, z: number, dur = 520) {
+    if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(z) || z <= 0) return
     this.vx = this.vy = 0
     this.holding = false
     const [zlo, zhi] = this.zoomRange()
+    const targetLz = clamp(Math.log(z), zlo, zhi)
+    if (!Number.isFinite(dur) || dur <= 0) {
+      this.jumpTo(cx, cy, Math.exp(targetLz))
+      return
+    }
     this.tween = {
       from: { cx: this.cx, cy: this.cy, lz: Math.log(this.z) },
-      to: { cx, cy, lz: clamp(Math.log(z), zlo, zhi) },
+      to: { cx, cy, lz: targetLz },
       t0: performance.now(),
       dur,
     }
@@ -187,6 +195,7 @@ export class Camera {
   }
 
   jumpTo(cx: number, cy: number, z: number) {
+    if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(z) || z <= 0) return
     this.tween = undefined
     this.rcx = cx
     this.rcy = cy
@@ -196,8 +205,11 @@ export class Camera {
   }
 
   fitZoom(r: Rect, pad = 64, maxZoom = 1) {
-    const zx = (this.viewport.w - pad * 2) / Math.max(r.w, 1)
-    const zy = (this.viewport.h - pad * 2) / Math.max(r.h, 1)
+    const p = Number.isFinite(pad) ? Math.max(0, pad) : 0
+    const px = Math.min(p, Math.max(0, (this.viewport.w - 40) / 2))
+    const py = Math.min(p, Math.max(0, (this.viewport.h - 40) / 2))
+    const zx = Math.max(1, this.viewport.w - px * 2) / Math.max(r.w, 1)
+    const zy = Math.max(1, this.viewport.h - py * 2) / Math.max(r.h, 1)
     return Math.max(this.minZoom, Math.min(maxZoom, zx, zy))
   }
 
@@ -213,14 +225,16 @@ export class Camera {
   }
 
   setViewport(w: number, h: number) {
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return
     this.viewport = { w, h }
     this.recompute()
   }
 
   /** Advance physics; returns true while anything is still moving. */
   step(dt: number): boolean {
+    if (!Number.isFinite(dt) || dt <= 0) dt = 1 / 60
     if (this.tween) {
-      const t = Math.min(1, (performance.now() - this.tween.t0) / this.tween.dur)
+      const t = Math.min(1, (performance.now() - this.tween.t0) / Math.max(1, this.tween.dur))
       const e = 1 - Math.pow(1 - t, 4) // easeOutQuart
       const { from, to } = this.tween
       this.rcx = from.cx + (to.cx - from.cx) * e
@@ -257,6 +271,8 @@ export class Camera {
         // Zoom back around the screen centre.
         this.rlz += (tz - this.rlz) * k
         active = true
+      } else if (this.rlz !== tz) {
+        this.rlz = tz
       }
       const rr = this.centerRange(Math.exp(this.rlz))
       const tx = clamp(this.rcx, rr.x0, rr.x1)

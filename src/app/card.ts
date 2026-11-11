@@ -65,19 +65,23 @@ const STATUS_TEXT: Record<Status, string> = {
   done: "done",
 }
 
-function setText(e: HTMLElement, v: string) {
-  if (e.textContent !== v) e.textContent = v
+function setText(e: HTMLElement, v: string): boolean {
+  if (e.textContent === v) return false
+  e.textContent = v
+  return true
 }
 
-export function updateSessionCard(c: CardEls, store: Store, id: string, now = Date.now()) {
+/** Patch a card's DOM in place. Returns true when layout-affecting content changed. */
+export function updateSessionCard(c: CardEls, store: Store, id: string, now = Date.now()): boolean {
   const s = store.sessions.get(id)
-  if (!s) return
+  if (!s) return false
   const working = store.isWorking(id)
   const ask = store.needsInput(id) ?? undefined
   const preview = store.previews.get(id)
   const live = working ? store.liveText.get(id) : undefined
 
-  setText(c.title, store.title(s))
+  let heightChanged = c.state === ""
+  if (setText(c.title, store.title(s))) heightChanged = true
   c.root.title = s.location.directory
 
   let body = preview?.text ?? ""
@@ -92,28 +96,37 @@ export function updateSessionCard(c: CardEls, store: Store, id: string, now = Da
     bullets = []
     pending = true
   }
-  setText(c.text, body)
-  c.text.classList.toggle("pending", pending)
+  if (setText(c.text, body)) heightChanged = true
+  if (c.text.classList.contains("pending") !== pending) {
+    c.text.classList.toggle("pending", pending)
+    heightChanged = true
+  }
   // Fixed-height body: streaming text never changes the card's size. Before
   // the preview loads, reserve the space so the layout doesn't jump.
-  c.body.classList.toggle("empty", !!preview && !body && !bullets.length)
+  const empty = !!preview && !body && !bullets.length
+  if (c.body.classList.contains("empty") !== empty) {
+    c.body.classList.toggle("empty", empty)
+    heightChanged = true
+  }
   const bulletKey = bullets.join("\u0001")
   if (c.bullets.dataset.key !== bulletKey) {
     c.bullets.dataset.key = bulletKey
     c.bullets.replaceChildren(...bullets.map((b) => el("li", "", b)))
+    heightChanged = true
   }
   // Only fade the top edge when the body actually clips its first line; the
   // mask used to wash out the first line of every short preview too.
-  const bodyKey = `${body}\u0000${bulletKey}\u0000${pending}`
+  const bodyKey = `${body}\u0000${bulletKey}\u0000${pending}\u0000${empty}`
   if (c.body.dataset.key !== bodyKey) {
     c.body.dataset.key = bodyKey
     c.body.classList.toggle(
       "clipped",
-      !c.body.classList.contains("empty") && c.body.scrollHeight > c.body.clientHeight + 1,
+      !empty && c.body.scrollHeight > c.body.clientHeight + 1,
     )
   }
 
   const status = store.status(id, now)
+  if ((c.root.dataset.status === "working") !== (status === "working")) heightChanged = true
   const fresh = status === "failed" && store.unseen(id) && now - (s.time.idle ?? 0) < REVIEW_WINDOW
   const state = `${status}:${ask ?? ""}:${fresh}`
   if (state !== c.state) {
@@ -151,4 +164,5 @@ export function updateSessionCard(c: CardEls, store: Store, id: string, now = Da
   const n = store.subagentCount(id)
   setText(c.sub, n ? `${n} subagent${n === 1 ? "" : "s"}` : "")
   c.root.classList.toggle("has-sub", n > 0)
+  return heightChanged
 }

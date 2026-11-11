@@ -61,19 +61,22 @@ function save(key: string, v: unknown) {
 
 /** Grid that fills the area with tiles as close to 4:3 as possible. */
 export function gridFor(n: number, w: number, hgt: number) {
-  if (n <= 0) return { cols: 1, rows: 1, rowH: hgt }
+  const safeW = Number.isFinite(w) ? Math.max(1, w) : 1
+  const safeH = Number.isFinite(hgt) ? Math.max(1, hgt) : 1
+  if (n <= 0) return { cols: 1, rows: 1, rowH: safeH }
   let best = { cols: 1, rows: n, score: Infinity }
   for (let cols = 1; cols <= n; cols++) {
-    const tw = (w - GAP * (cols - 1)) / cols
-    if (tw < MIN_TILE_W && cols > 1) break
+    const rawTw = (safeW - GAP * (cols - 1)) / cols
+    if (rawTw < MIN_TILE_W && cols > 1) break
+    const tw = Math.max(1, rawTw)
     const rows = Math.ceil(n / cols)
-    const th = (hgt - GAP * (rows - 1)) / rows
+    const th = (safeH - GAP * (rows - 1)) / rows
     const tooShort = th < MIN_TILE_H ? (MIN_TILE_H - th) / MIN_TILE_H : 0
     const empty = (cols * rows - n) / (cols * rows)
     const score = Math.abs(Math.log(tw / Math.max(th, MIN_TILE_H) / 1.33)) + tooShort * 2 + empty * 0.8
     if (score < best.score) best = { cols, rows, score }
   }
-  const rowH = Math.max(MIN_TILE_H, (hgt - GAP * (best.rows - 1)) / best.rows)
+  const rowH = Math.max(MIN_TILE_H, (safeH - GAP * (best.rows - 1)) / best.rows)
   return { cols: best.cols, rows: best.rows, rowH }
 }
 
@@ -89,6 +92,8 @@ class Tile {
   private input: HTMLTextAreaElement
   private hint: HTMLElement
   private state = ""
+  private ac = new AbortController()
+  private destroyed = false
 
   constructor(
     readonly id: string,
@@ -113,9 +118,15 @@ class Tile {
     row.append(this.projectEl, this.statusEl, this.stopBtn, actions)
     this.titleEl = h("div", "tile-title")
     head.append(row, this.titleEl)
-    head.addEventListener("dblclick", (e) => {
-      if (!(e.target as HTMLElement).closest("button")) this.view.toggleMax(id)
-    })
+    head.addEventListener(
+      "dblclick",
+      (e) => {
+        const t = e.target as Element | null
+        const el = typeof Element !== "undefined" ? (t instanceof Element ? t : null) : t && typeof t.closest === "function" ? t : null
+        if (!el?.closest("button")) this.view.toggleMax(id)
+      },
+      { signal: this.ac.signal } as AddEventListenerOptions,
+    )
 
     this.transcript = new Transcript(store, backend, {
       pageSize: 30,
@@ -139,14 +150,19 @@ class Tile {
 
   private button(content: string, title: string, run: () => void, cls = "") {
     const b = h("button", `tile-btn ${cls}`.trim()) as HTMLButtonElement
+    b.type = "button"
     if (content.startsWith("<svg")) b.innerHTML = content
     else b.textContent = content
     b.title = title
     b.setAttribute("aria-label", title)
-    b.addEventListener("click", (e) => {
-      e.stopPropagation()
-      run()
-    })
+    b.addEventListener(
+      "click",
+      (e) => {
+        e.stopPropagation()
+        run()
+      },
+      { signal: this.ac.signal } as AddEventListenerOptions,
+    )
     return b
   }
 
@@ -193,37 +209,46 @@ class Tile {
     const pinned = this.view.isPinned(this.id)
     this.pinBtn.classList.toggle("on", pinned)
     this.pinBtn.title = pinned ? "Unpin" : "Pin this tile"
+    this.pinBtn.setAttribute("aria-label", this.pinBtn.title)
     const maxed = this.view.maximized === this.id
     if (this.maxBtn.dataset.max !== String(maxed)) {
       this.maxBtn.dataset.max = String(maxed)
       this.maxBtn.innerHTML = maxed ? ICONS.restore : ICONS.max
       this.maxBtn.title = maxed ? "Restore (Esc)" : "Maximize (double-click the header)"
+      this.maxBtn.setAttribute("aria-label", this.maxBtn.title)
     }
     this.input.placeholder = working ? "Steer…" : "Reply…"
     this.hint.textContent = working ? "Tab to queue" : ""
   }
 
+  private autosize() {
+    this.input.style.height = "auto"
+    this.input.style.height = `${Math.min(120, this.input.scrollHeight)}px`
+  }
+
   private bindComposer() {
     const input = this.input
-    input.addEventListener("input", () => {
-      input.style.height = "auto"
-      input.style.height = `${Math.min(120, input.scrollHeight)}px`
-    })
-    input.addEventListener("keydown", (e) => {
-      e.stopPropagation()
-      if (e.isComposing) return
-      const running = this.store.running.has(this.id)
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault()
-        void this.send(running ? "steer" : undefined)
-      } else if (e.key === "Tab" && !e.shiftKey && input.value.trim()) {
-        e.preventDefault()
-        void this.send("queue")
-      } else if (e.key === "Escape") {
-        e.preventDefault()
-        input.blur()
-      }
-    })
+    input.addEventListener("input", () => this.autosize(), { signal: this.ac.signal } as AddEventListenerOptions)
+    input.addEventListener(
+      "keydown",
+      (e) => {
+        e.stopPropagation()
+        if (e.isComposing) return
+        const running = this.store.running.has(this.id)
+        const canQueue = running || this.view.statusOf(this.id) === "needs-you"
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault()
+          void this.send(running ? "steer" : undefined)
+        } else if (e.key === "Tab" && !e.shiftKey && canQueue && input.value.trim()) {
+          e.preventDefault()
+          void this.send("queue")
+        } else if (e.key === "Escape") {
+          e.preventDefault()
+          input.blur()
+        }
+      },
+      { signal: this.ac.signal } as AddEventListenerOptions,
+    )
   }
 
   private async send(delivery: "steer" | "queue" | undefined) {
@@ -235,10 +260,13 @@ class Tile {
     this.transcript.addPending(temp)
     try {
       await this.backend.prompt(this.id, { text, delivery })
-      this.transcript.scheduleRefetch(80)
+      if (!this.destroyed) this.transcript.scheduleRefetch(80)
     } catch (e) {
       this.transcript.removePending(temp)
-      this.input.value = text
+      if (!this.destroyed && !this.input.value.trim()) {
+        this.input.value = text
+        this.autosize()
+      }
       toast(`Couldn't send: ${(e as Error).message}`)
     }
   }
@@ -248,6 +276,9 @@ class Tile {
   }
 
   destroy() {
+    if (this.destroyed) return
+    this.destroyed = true
+    this.ac.abort()
     this.transcript.destroy()
     this.root.remove()
   }
@@ -269,6 +300,11 @@ export class TilesView {
   maximized?: string
   private open_ = false
   private syncQueued = false
+  private ac = new AbortController()
+  private unsubStore: () => void
+  private ro: ResizeObserver
+  private tickTimer: ReturnType<typeof setInterval>
+  private destroyed = false
 
   constructor(
     host: HTMLElement,
@@ -288,17 +324,23 @@ export class TilesView {
     this.subsToggle = h("input") as HTMLInputElement
     this.subsToggle.type = "checkbox"
     this.subsToggle.checked = this.includeSubagents
-    this.subsToggle.addEventListener("change", () => {
-      this.includeSubagents = this.subsToggle.checked
-      save(SUBS_KEY, this.includeSubagents)
-      this.sync()
-    })
+    this.subsToggle.addEventListener(
+      "change",
+      () => {
+        this.includeSubagents = this.subsToggle.checked
+        save(SUBS_KEY, this.includeSubagents)
+        this.sync()
+      },
+      { signal: this.ac.signal } as AddEventListenerOptions,
+    )
     subs.append(this.subsToggle, document.createTextNode(" Subagents"))
     const newBtn = h("button", "tiles-btn", "+ New session") as HTMLButtonElement
-    newBtn.addEventListener("click", () => this.handlers.newSession())
+    newBtn.type = "button"
+    newBtn.addEventListener("click", () => this.handlers.newSession(), { signal: this.ac.signal } as AddEventListenerOptions)
     const back = h("button", "tiles-btn primary", "Canvas") as HTMLButtonElement
+    back.type = "button"
     back.title = "Back to the canvas (Esc)"
-    back.addEventListener("click", () => this.close())
+    back.addEventListener("click", () => this.close(), { signal: this.ac.signal } as AddEventListenerOptions)
     tools.append(subs, autoApproveToggle(store), newBtn, back)
     bar.append(title, tools)
 
@@ -307,10 +349,10 @@ export class TilesView {
     this.el.append(bar, this.grid, this.empty)
     host.append(this.el)
 
-    store.on({
+    this.unsubStore = store.on({
       structure: () => this.queueSync(),
       cards: (ids) => {
-        if (!this.open_) return
+        if (!this.open_ || this.destroyed) return
         let membership = false
         let touched = false
         for (const id of ids) {
@@ -325,9 +367,10 @@ export class TilesView {
         else if (touched) this.renderCounts()
       },
     })
-    new ResizeObserver(() => this.layout()).observe(this.grid)
-    setInterval(() => {
-      if (this.open_) for (const t of this.tiles.values()) t.update()
+    this.ro = new ResizeObserver(() => this.layout())
+    this.ro.observe(this.grid)
+    this.tickTimer = setInterval(() => {
+      if (this.open_ && !this.destroyed) for (const t of this.tiles.values()) t.update()
     }, 30_000)
   }
 
@@ -336,7 +379,7 @@ export class TilesView {
   }
 
   open() {
-    if (this.open_) return
+    if (this.open_ || this.destroyed) return
     this.open_ = true
     this.el.classList.add("visible")
     document.documentElement.classList.add("tiles-open")
@@ -353,6 +396,17 @@ export class TilesView {
     this.tiles.clear()
     this.maximized = undefined
     this.handlers.closed()
+  }
+
+  destroy() {
+    if (this.destroyed) return
+    this.destroyed = true
+    this.close()
+    this.ac.abort()
+    this.unsubStore()
+    this.ro.disconnect()
+    clearInterval(this.tickTimer)
+    this.el.remove()
   }
 
   // ---- membership ----------------------------------------------------------------
@@ -416,6 +470,7 @@ export class TilesView {
   }
 
   toggleMax(id: string) {
+    if (this.maximized !== id && !this.tiles.has(id)) return
     this.maximized = this.maximized === id ? undefined : id
     for (const t of this.tiles.values()) t.update()
     this.layout()
@@ -430,16 +485,17 @@ export class TilesView {
   // ---- rendering -------------------------------------------------------------------
 
   private queueSync() {
-    if (this.syncQueued || !this.open_) return
+    if (this.syncQueued || !this.open_ || this.destroyed) return
     this.syncQueued = true
     queueMicrotask(() => {
       this.syncQueued = false
+      if (!this.open_ || this.destroyed) return
       this.sync()
     })
   }
 
   private sync() {
-    if (!this.open_) return
+    if (!this.open_ || this.destroyed) return
     const want = this.candidates().filter((s) => this.wants(s.id))
     // Group by project so neighbours share a colour; stable within a project.
     const key = (s: Session) => {
@@ -471,12 +527,13 @@ export class TilesView {
   }
 
   private renderCounts() {
+    const now = Date.now()
     const c = { "needs-you": 0, working: 0, review: 0 }
     for (const id of this.tiles.keys()) {
-      const st = this.store.status(id)
+      const st = this.store.status(id, now)
       if (st === "needs-you") c["needs-you"]++
       else if (st === "working") c.working++
-      else if (st === "review" || st === "failed") c.review++
+      else if (this.store.inFilter(id, "review", now)) c.review++
     }
     const parts: string[] = []
     if (c["needs-you"]) parts.push(`<span class="tc needs-you">${c["needs-you"]} need${c["needs-you"] === 1 ? "s" : ""} you</span>`)
@@ -490,15 +547,23 @@ export class TilesView {
   }
 
   private layout() {
-    if (!this.open_) return
+    if (!this.open_ || this.destroyed) return
     const tiles = [...this.tiles.values()]
     const max = this.maximized ? this.tiles.get(this.maximized) : undefined
     for (const t of tiles) t.root.classList.toggle("off", !!max && t !== max)
     const shown = max ? 1 : tiles.length
     const r = this.grid.getBoundingClientRect()
-    const g = gridFor(shown, r.width || innerWidth, r.height || innerHeight - 60)
+    const cs = typeof getComputedStyle === "function" ? getComputedStyle(this.grid) : undefined
+    const padX = cs ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) : GAP * 2
+    const padY = cs ? (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) : GAP * 2
+    const vw = typeof innerWidth === "number" ? innerWidth : 1200
+    const vh = typeof innerHeight === "number" ? innerHeight : 800
+    const rawW = (r.width || vw) - padX
+    const rawH = (r.height || vh - 60) - padY
+    const g = gridFor(shown, Math.max(1, rawW), Math.max(1, rawH))
     this.grid.style.gridTemplateColumns = `repeat(${g.cols}, minmax(0, 1fr))`
     this.grid.style.gridAutoRows = `${Math.floor(g.rowH)}px`
-    this.grid.classList.toggle("scrolls", g.rowH * g.rows + GAP * (g.rows - 1) > (r.height || 0) + 1)
+    const contentH = r.height ? Math.max(0, r.height - padY) : 0
+    this.grid.classList.toggle("scrolls", g.rowH * g.rows + GAP * (g.rows - 1) > contentH + 1)
   }
 }

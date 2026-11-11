@@ -19,12 +19,13 @@ interface FakeCanvas {
   style: Record<string, string>
   dataset: Record<string, string>
   className: string
+  classList?: { contains: (cls: string) => boolean }
   isConnected: boolean
   offsetParent: object | null
   width: number
   height: number
   ops: Ops
-  closest: (selector: string) => null
+  closest: (selector: string) => Element | null
   getContext: (kind: string) => unknown
   setAttribute: (name: string, value: string) => void
 }
@@ -241,5 +242,56 @@ describe("disconnected canvases and loop shutdown", () => {
     const before = raf.length
     spinner(13) // running was cleared by the guard, so this starts a fresh loop
     expect(raf.length).toBe(before + 1)
+  })
+})
+
+describe("spinners — visibility gating, color, window safety, and reduced style updates", () => {
+  test("paintLive skips .stacked / .is-open canvases and respects document.hidden while still pruning", () => {
+    reduceFlag = false
+    const hiddenCanvas = makeCanvas() as unknown as FakeCanvas
+    const visibleCanvas = makeCanvas() as unknown as FakeCanvas
+    hiddenCanvas.closest = (sel: string) => (sel.includes(".stacked") ? ({} as Element) : null)
+    let calls = 0
+    g.document = {
+      hidden: false,
+      createElement: () => {
+        calls++
+        return (calls === 1 ? hiddenCanvas : visibleCanvas) as unknown as HTMLCanvasElement
+      },
+    }
+    spinner(13)
+    spinner(13)
+    const h0 = hiddenCanvas.ops.length
+    const v0 = visibleCanvas.ops.length
+    raf[raf.length - 1](15_000)
+    expect(hiddenCanvas.ops.length).toBe(h0)
+    expect(visibleCanvas.ops.length).toBeGreaterThan(v0)
+
+    // When tab is hidden, neither canvas paints, and disconnected canvases are still pruned.
+    ;(g.document as { hidden: boolean }).hidden = true
+    hiddenCanvas.isConnected = false
+    const v1 = visibleCanvas.ops.length
+    raf[raf.length - 1](16_000)
+    expect(visibleCanvas.ops.length).toBe(v1)
+    visibleCanvas.isConnected = false
+    raf[raf.length - 1](17_000) // prune visibleCanvas before ending
+    raf[raf.length - 1](17_030) // stop loop cleanly
+  })
+
+  test("setSpinnerStyle repaints non-fixed reduced-motion spinners without touching fixed ones, and works without window", () => {
+    delete g.window
+    reduceFlag = true
+    const rest = spinner(14) as unknown as FakeCanvas
+    rest.classList = { contains: (c: string) => c === "spin" }
+    const fixed = spinner(12, "seg-spin", "matrix") as unknown as FakeCanvas
+    const r0 = rest.ops.length
+    const f0 = fixed.ops.length
+    setSpinnerStyle("wave")
+    expect(rest.ops.length).toBeGreaterThan(r0)
+    expect(rest.ops).toContain("roundRect")
+    expect(fixed.ops.length).toBe(f0)
+    setSpinnerStyle("comet")
+    rest.isConnected = false
+    fixed.isConnected = false
   })
 })

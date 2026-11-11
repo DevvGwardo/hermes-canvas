@@ -119,27 +119,28 @@ function shelf(blocks: Block[], aspect: number, min: number, out: LayoutResult) 
 
 function columnsBlock(g: LayoutGroup, cols: number, rowMajor: boolean): Block {
   const items = g.items
-  const colH = new Array(cols).fill(0)
+  const cCount = Math.max(1, cols)
+  const colH = new Array(cCount).fill(0)
   const pos: Array<{ id: string; c: number; y: number; h: number }> = []
   if (rowMajor) {
     // Grid: rows share a top edge so the reading order stays left-to-right.
     let y = 0
-    for (let r = 0; r * cols < items.length; r++) {
-      const row = items.slice(r * cols, r * cols + cols)
+    for (let r = 0; r * cCount < items.length; r++) {
+      const row = items.slice(r * cCount, r * cCount + cCount)
       row.forEach((it, c) => pos.push({ id: it.id, c, y, h: it.h }))
       y += Math.max(...row.map((it) => it.h)) + GAP
     }
     colH.fill(y)
   } else {
-    const per = Math.ceil(items.length / cols)
+    const per = Math.ceil(items.length / cCount)
     items.forEach((it, i) => {
       const c = Math.floor(i / per)
       pos.push({ id: it.id, c, y: colH[c], h: it.h })
       colH[c] += it.h + GAP
     })
   }
-  const w = cols * CARD_W + (cols - 1) * GAP
-  const h = LABEL_H + Math.max(0, ...colH) - GAP
+  const w = cCount * CARD_W + (cCount - 1) * GAP
+  const h = items.length ? LABEL_H + Math.max(0, ...colH) - GAP : LABEL_H
   return {
     key: g.key,
     w,
@@ -165,7 +166,7 @@ function tree(groups: LayoutGroup[], o: LayoutOptions, out: LayoutResult) {
 }
 
 function tabs(groups: LayoutGroup[], o: LayoutOptions, out: LayoutResult) {
-  const blocks = groups.map((g) => columnsBlock(g, Math.min(3, g.items.length), true))
+  const blocks = groups.map((g) => columnsBlock(g, Math.max(1, Math.min(3, g.items.length)), true))
   shelf(blocks, o.aspect ?? 1.6, 2000, out)
 }
 
@@ -176,6 +177,16 @@ const PILE_TOP = 4
 function pileBlock(g: LayoutGroup): Block {
   const sessions = g.items.filter((i) => i.kind === "session")
   const top = sessions[0] ?? g.items[0]
+  if (!top) {
+    return {
+      key: g.key,
+      w: CARD_W,
+      h: LABEL_H,
+      place(ox, oy, out) {
+        label(out, g.key, g.label, ox, oy, CARD_W, countLabel(g))
+      },
+    }
+  }
   const h = LABEL_H + PILE_TOP + top.h + PILE_DEPTH * PILE_STEP + 10
   return {
     key: g.key,
@@ -210,7 +221,7 @@ function pileBlock(g: LayoutGroup): Block {
 
 function fold(groups: LayoutGroup[], o: LayoutOptions, out: LayoutResult) {
   const blocks = groups.map((g) =>
-    g.key === o.expanded ? columnsBlock(g, Math.min(3, g.items.length), true) : pileBlock(g),
+    g.key === o.expanded ? columnsBlock(g, Math.max(1, Math.min(3, g.items.length)), true) : pileBlock(g),
   )
   shelf(blocks, o.aspect ?? 1.6, 1600, out)
 }
@@ -222,19 +233,93 @@ function satellitesBlock(g: LayoutGroup): Block {
   const hub = sessions[0]
   const rest = sessions.slice(1)
   const rings: LayoutItem[][] = []
-  let radius = 330
+  const maxSatH = rest.reduce((m, it) => Math.max(m, it.h * SAT_SCALE), 0)
+  const minR0 = ((hub?.h ?? 200) / 2 + LABEL_H + maxSatH / 2 + 20) / 0.86
+  let radius = Math.max(330, minR0)
   const radii: number[] = []
+  const satW = CARD_W * SAT_SCALE
   let i = 0
+  let prevRingMaxH = 0
   while (i < rest.length) {
-    const cap = Math.max(6, Math.floor((2 * Math.PI * radius) / (CARD_W * SAT_SCALE + 26)))
-    rings.push(rest.slice(i, i + cap))
+    // Account for both horizontal spacing and 0.86 vertical ellipse compression so tall cards do not collide.
+    const nominalCap = Math.max(6, Math.floor((2 * Math.PI * radius) / (satW + 26)))
+    const probe = rest.slice(i, i + nominalCap)
+    const ringMaxH = probe.reduce((m, it) => Math.max(m, it.h * SAT_SCALE), 0)
+    if (i > 0) {
+      const minStep = ((prevRingMaxH + ringMaxH) / 2 + 20) / 0.86
+      if (minStep > 250) radius += minStep - 250
+    }
+    const vertStepNeeded = (ringMaxH + 16) / 0.86
+    const arcStep = Math.max(satW + 26, vertStepNeeded)
+    const cap = Math.max(6, Math.floor((2 * Math.PI * radius) / arcStep))
+    const slice = rest.slice(i, i + cap)
+    const r = rings.length
+    const n = slice.length
+    const angles = slice.map((_, k) => -Math.PI / 2 + (k / n) * Math.PI * 2 + r * 0.35)
+    // Guarantee exact scaled AABB separation vs hub (ring 0) and between all cards on this ring.
+    for (let a = 0; a < n; a++) {
+      const ca = Math.cos(angles[a])
+      const sa = Math.sin(angles[a])
+      if (r === 0 && hub) {
+        const dc = Math.abs(ca)
+        const ds = Math.abs(sa)
+        const needW = (CARD_W + satW) / 2 + 12
+        const needH = (hub.h + slice[a].h * SAT_SCALE) / 2 + (sa < 0 ? LABEL_H + 10 : 14)
+        const rx = dc > 1e-6 ? needW / dc : Infinity
+        const ry = ds > 1e-6 ? needH / (0.86 * ds) : Infinity
+        const hubMin = Math.min(rx, ry)
+        if (Number.isFinite(hubMin)) radius = Math.max(radius, hubMin)
+      }
+      for (let b = a + 1; b < n; b++) {
+        const dc = Math.abs(ca - Math.cos(angles[b]))
+        const ds = Math.abs(sa - Math.sin(angles[b]))
+        const needW = satW + 14
+        const needH = ((slice[a].h + slice[b].h) * SAT_SCALE) / 2 + 14
+        const rx = dc > 1e-6 ? needW / dc : Infinity
+        const ry = ds > 1e-6 ? needH / (0.86 * ds) : Infinity
+        const pairMin = Math.min(rx, ry)
+        if (Number.isFinite(pairMin)) radius = Math.max(radius, pairMin)
+      }
+    }
+    // Also ensure no card on ring r overlaps any card on ring r - 1 despite the 0.35 rad twist.
+    if (r > 0) {
+      const prev = rings[r - 1]
+      const prevR = radii[r - 1]
+      const prevAngles = prev.map((_, k) => -Math.PI / 2 + (k / prev.length) * Math.PI * 2 + (r - 1) * 0.35)
+      for (let pass = 0; pass < 8; pass++) {
+        let bumped = false
+        for (let a = 0; a < n; a++) {
+          const ca = Math.cos(angles[a])
+          const sa = Math.sin(angles[a])
+          for (let b = 0; b < prev.length; b++) {
+            const px = Math.cos(prevAngles[b]) * prevR
+            const py = Math.sin(prevAngles[b]) * prevR * 0.86
+            const needW = satW + 14
+            const needH = ((slice[a].h + prev[b].h) * SAT_SCALE) / 2 + 14
+            if (Math.abs(ca * radius - px) < needW && Math.abs(sa * radius * 0.86 - py) < needH) {
+              const rx = ca > 1e-6 ? (px + needW) / ca : ca < -1e-6 ? (px - needW) / ca : Infinity
+              const ry = sa > 1e-6 ? (py + needH) / (0.86 * sa) : sa < -1e-6 ? (py - needH) / (0.86 * sa) : Infinity
+              const clearR = Math.min(rx, ry)
+              if (Number.isFinite(clearR) && clearR > radius) {
+                radius = clearR
+                bumped = true
+              }
+            }
+          }
+        }
+        if (!bumped) break
+      }
+    }
+    rings.push(slice)
     radii.push(radius)
-    i += cap
+    prevRingMaxH = slice.reduce((m, it) => Math.max(m, it.h * SAT_SCALE), 0)
+    i += slice.length
     radius += 250
   }
   const outer = radii.length ? radii[radii.length - 1] : 0
+  const outerRingMaxH = rings.length ? rings[rings.length - 1].reduce((m, it) => Math.max(m, it.h * SAT_SCALE), 0) : 0
   const halfW = outer + (CARD_W * SAT_SCALE) / 2 + 20
-  const halfH = outer * 0.86 + 130
+  const halfH = outer * 0.86 + Math.max(130, outerRingMaxH / 2 + 16)
   const size = { w: Math.max(CARD_W + 40, halfW * 2), h: Math.max((hub?.h ?? 200) + 60, halfH * 2) + LABEL_H }
   return {
     key: g.key,
@@ -297,7 +382,7 @@ function searchGrid(groups: LayoutGroup[], previous: LayoutResult | undefined, o
           : card(0, 0, it.h, { opacity: 0, scale: 0.9, interactive: false, z: 0 }),
       )
     }
-  out.groups.set("__search", { x: 0, y: 0, w: cols * (CARD_W + GAP) - GAP, h: Math.max(...colH) })
+  out.groups.set("__search", { x: 0, y: 0, w: cols * (CARD_W + GAP) - GAP, h: Math.max(...colH) - (hits.length ? GAP : 0) })
 }
 
 export function layout(

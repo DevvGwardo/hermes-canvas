@@ -1,5 +1,17 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Camera } from "../src/app/camera"
+
+let fakeNow = 10_000
+const realNow = performance.now.bind(performance)
+
+beforeEach(() => {
+  fakeNow = 10_000
+  performance.now = () => fakeNow
+})
+
+afterEach(() => {
+  performance.now = realNow
+})
 
 function cam() {
   const c = new Camera(() => {})
@@ -43,9 +55,8 @@ describe("camera", () => {
     c.jumpTo(2240, 500, 1)
     for (let i = 0; i < 10; i++) c.panBy(200, 0)
     c.release(0, 0)
-    // release() marks recent input; wait past the idle threshold.
-    const t0 = performance.now()
-    while (performance.now() - t0 < 150) {}
+    // release() marks recent input; advance past the idle threshold without busy-waiting.
+    fakeNow += 150
     settle(c)
     expect(c.cx).toBeCloseTo(2240, 0)
   })
@@ -63,8 +74,7 @@ describe("camera", () => {
   test("animateTo reaches its target", () => {
     const c = cam()
     c.animateTo(300, 200, 0.5, 100)
-    const t0 = performance.now()
-    while (performance.now() - t0 < 120) {}
+    fakeNow += 120
     c.step(1 / 60)
     expect(c.cx).toBeCloseTo(300)
     expect(c.cy).toBeCloseTo(200)
@@ -172,5 +182,41 @@ describe("camera — moving, hold and fit", () => {
     tweened.fit(target, 64, 1) // animate defaults true
     expect(tweened.cx).toBe(1000) // untouched until the first step...
     expect(tweened.moving).toBe(true) // ...and the tween keeps it awake
+  })
+
+  test("guards invalid zoomAt factors, zero-duration tweens, non-finite inputs, and narrow fitZoom", () => {
+    const c = cam()
+    const before = { cx: c.cx, cy: c.cy, z: c.z }
+    c.zoomAt(0, 500, 400)
+    c.zoomAt(-2, 500, 400)
+    c.zoomAt(NaN, 500, 400)
+    c.zoomAt(Infinity, 500, 400)
+    c.panBy(NaN, 10)
+    c.jumpTo(NaN, 0, 1)
+    c.jumpTo(0, 0, 0)
+    c.setViewport(0, 800)
+    expect({ cx: c.cx, cy: c.cy, z: c.z }).toEqual(before)
+
+    // dur <= 0 jumps immediately without NaN division
+    c.animateTo(400, 300, 0.8, 0)
+    c.step(1 / 60)
+    expect(c.cx).toBeCloseTo(400)
+    expect(c.cy).toBeCloseTo(300)
+    expect(c.z).toBeCloseTo(0.8)
+
+    // Narrow viewport with large pad (e.g. closeStack pad=120 at 200px wide) never collapses to minZoom
+    c.setViewport(200, 600)
+    const zNarrow = c.fitZoom({ x: 0, y: 0, w: 300, h: 200 }, 120, 1)
+    expect(zNarrow).toBeGreaterThan(c.minZoom)
+    expect(zNarrow).toBeCloseTo(40 / 300, 4)
+  })
+
+  test("step snaps rlz cleanly when zoom settles back into range", () => {
+    const c = cam()
+    c.jumpTo(1000, 500, 0.02) // slightly below minZoom (0.04)
+    fakeNow += 200
+    settle(c, 5)
+    expect(c.z).toBeCloseTo(c.minZoom, 6)
+    expect(c.moving).toBe(false)
   })
 })
