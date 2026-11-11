@@ -30,7 +30,7 @@ type FakeEl = {
     contains(c: string): boolean
   }
   setAttribute(k: string, v: string): void
-  addEventListener(t: string, fn: (e: unknown) => void): void
+  addEventListener(t: string, fn: (e: unknown) => void, opts?: { signal?: AbortSignal }): void
   append(...ns: FakeEl[]): void
   remove(): void
   querySelector(sel: string): FakeEl | null
@@ -67,8 +67,18 @@ function fakeEl(tag: string): FakeEl {
     setAttribute: (k, v) => {
       el.attrs[k] = v
     },
-    addEventListener: (t, fn) => {
+    addEventListener: (t, fn, opts) => {
+      if (opts?.signal?.aborted) return
       ;(el.handlers[t] ??= []).push(fn)
+      opts?.signal?.addEventListener(
+        "abort",
+        () => {
+          const arr = el.handlers[t]
+          const i = arr ? arr.indexOf(fn) : -1
+          if (i >= 0) arr!.splice(i, 1)
+        },
+        { once: true },
+      )
     },
     append: (...ns) => el.children.push(...ns),
     remove: () => {},
@@ -320,6 +330,56 @@ test("isolates toggles across stores, sets button type, and syncs external store
   realStore.setAutoApproveAll(false)
   expect(liveBtn.classList.contains("on")).toBe(false)
   expect(detachedBtn.classList.contains("on")).toBe(true) // disconnected toggle was pruned
+
+  // If the last toggle becomes disconnected and paint() prunes it, the store listener is removed
+  liveBtn.isConnected = false
+  realStore.setAutoApproveAll(true)
+  expect(liveBtn.classList.contains("on")).toBe(false)
+  expect(realStore["listeners"].size).toBe(0)
+})
+
+test("autoApproveToggle tears down store and click listeners when AbortSignal aborts", () => {
+  const realStore = new Store({ kind: "demo" } as unknown as Backend)
+  realStore.setAutoApproveAll(false)
+  const dead = new AbortController()
+  dead.abort()
+  const deadBtn = autoApproveToggle(realStore, { signal: dead.signal }) as unknown as FakeEl
+  expect(deadBtn.attrs["aria-pressed"]).toBe("false")
+  expect(deadBtn.handlers.click ?? []).toEqual([])
+  expect(realStore["listeners"].size).toBe(0)
+
+  const ac1 = new AbortController()
+  const ac2 = new AbortController()
+  const b1 = autoApproveToggle(realStore, { signal: ac1.signal }) as unknown as FakeEl
+  const b2 = autoApproveToggle(realStore, { signal: ac2.signal }) as unknown as FakeEl
+  expect(realStore["listeners"].size).toBe(1)
+
+  // Arm toggle 1, then abort ac1: click handler & confirm timer clear while toggle 2 keeps store wired
+  click(b1)
+  expect(b1.classList.contains("confirming")).toBe(true)
+  ac1.abort()
+  expect(b1.handlers.click ?? []).toEqual([])
+  expect(realStore["listeners"].size).toBe(1)
+  jest.advanceTimersByTime(4000)
+  expect(b1.classList.contains("confirming")).toBe(true) // confirm timer cancelled instead of repainting
+
+  realStore.setAutoApproveAll(true)
+  expect(b2.classList.contains("on")).toBe(true)
+  expect(b1.classList.contains("on")).toBe(false)
+
+  // Aborting the final active toggle unsubscribes from store completely
+  ac2.abort()
+  expect(realStore["listeners"].size).toBe(0)
+
+  // Subsequent toggle re-wires cleanly and cleans up on abort
+  const ac3 = new AbortController()
+  const b3 = autoApproveToggle(realStore, { signal: ac3.signal }) as unknown as FakeEl
+  expect(b3.classList.contains("on")).toBe(true)
+  expect(realStore["listeners"].size).toBe(1)
+  realStore.setAutoApproveAll(false)
+  expect(b3.classList.contains("on")).toBe(false)
+  ac3.abort()
+  expect(realStore["listeners"].size).toBe(0)
 })
 
 test("autoApprovedNotices handles empty resources and cleanup cancels pending bursts", () => {
